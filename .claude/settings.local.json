@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npm run:*)",
+      "Bash(pm2 list:*)",
+      "Bash(curl -s http://127.0.0.1:8787/api/health)",
+      "Bash(curl:*)",
+      "Bash(pm2 logs:*)",
+      "Bash(iptables:*)",
+      "Bash(pm2 restart:*)",
+      "Bash(grep -v \"^$\")",
+      "Bash(node -c /root/english/server/index.js)",
+      "Bash(node -e \"console.log\\(process.version\\); require\\('undici'\\)\")"
+    ]
+  }
+}
