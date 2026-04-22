@@ -1,0 +1,55 @@
+2026-04-16 12:23:29 +08:00: Error: ENOENT: no such file or directory, stat '/root/english/dist/index.html'
+You have triggered an unhandledRejection, you may have forgotten to catch a Promise rejection:
+SyntaxError: Missing catch or finally after try
+    at ModuleLoader.moduleStrategy (node:internal/modules/esm/translators:152:18)
+    at ModuleLoader.moduleProvider (node:internal/modules/esm/loader:298:14)
+    at async link (node:internal/modules/esm/module_job:67:21)
+You have triggered an unhandledRejection, you may have forgotten to catch a Promise rejection:
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'undici' imported from /root/english/server/index.js
+Did you mean to import undici/index.js?
+    at new NodeError (node:internal/errors:405:5)
+    at packageResolve (node:internal/modules/esm/resolve:916:9)
+    at moduleResolve (node:internal/modules/esm/resolve:973:20)
+    at defaultResolve (node:internal/modules/esm/resolve:1193:11)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:403:12)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:372:25)
+    at ModuleLoader.getModuleJob (node:internal/modules/esm/loader:249:38)
+    at ModuleWrap.<anonymous> (node:internal/modules/esm/module_job:76:39)
+    at link (node:internal/modules/esm/module_job:75:36)
+You have triggered an unhandledRejection, you may have forgotten to catch a Promise rejection:
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'undici' imported from /root/english/server/index.js
+Did you mean to import undici/index.js?
+    at new NodeError (node:internal/errors:405:5)
+    at packageResolve (node:internal/modules/esm/resolve:916:9)
+    at moduleResolve (node:internal/modules/esm/resolve:973:20)
+    at defaultResolve (node:internal/modules/esm/resolve:1193:11)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:403:12)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:372:25)
+    at ModuleLoader.getModuleJob (node:internal/modules/esm/loader:249:38)
+    at ModuleWrap.<anonymous> (node:internal/modules/esm/module_job:76:39)
+    at link (node:internal/modules/esm/module_job:75:36)
+You have triggered an unhandledRejection, you may have forgotten to catch a Promise rejection:
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'undici' imported from /root/english/server/index.js
+Did you mean to import undici/index.js?
+    at new NodeError (node:internal/errors:405:5)
+    at packageResolve (node:internal/modules/esm/resolve:916:9)
+    at moduleResolve (node:internal/modules/esm/resolve:973:20)
+    at defaultResolve (node:internal/modules/esm/resolve:1193:11)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:403:12)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:372:25)
+    at ModuleLoader.getModuleJob (node:internal/modules/esm/loader:249:38)
+    at ModuleWrap.<anonymous> (node:internal/modules/esm/module_job:76:39)
+    at link (node:internal/modules/esm/module_job:75:36)
+You have triggered an unhandledRejection, you may have forgotten to catch a Promise rejection:
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'undici' imported from /root/english/server/index.js
+Did you mean to import undici/index.js?
+    at new NodeError (node:internal/errors:405:5)
+    at packageResolve (node:internal/modules/esm/resolve:916:9)
+    at moduleResolve (node:internal/modules/esm/resolve:973:20)
+    at defaultResolve (node:internal/modules/esm/resolve:1193:11)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:403:12)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:372:25)
+    at ModuleLoader.getModuleJob (node:internal/modules/esm/loader:249:38)
+    at ModuleWrap.<anonymous> (node:internal/modules/esm/module_job:76:39)
+    at link (node:internal/modules/esm/module_job:75:36)
+2026-04-21 21:17:34 +08:00: Error: ENOENT: no such file or directory, stat '/root/english/dist/index.html'

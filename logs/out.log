@@ -1,0 +1,60 @@
+LinguaFlash proxy listening on http://0.0.0.0:80
+tening on http://0.0.0.0:80
+2026-04-19 09:47:57 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-19 21:43:09 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-20 12:17:50 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-20 16:24:21 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-20 16:30:29 +08:00: [OCR Test] Success: available_models=111
+2026-04-20 16:30:32 +08:00: [OCR Test] Success: available_models=111
+2026-04-20 16:30:41 +08:00: [LLM Test] Success: model=Pro/deepseek-ai/DeepSeek-V3.2, response="你好！👋 "
+2026-04-20 16:30:45 +08:00: [LLM Test] Success: model=Pro/deepseek-ai/DeepSeek-V3.2, response="你好！👋 "
+2026-04-20 16:35:25 +08:00: [LLM Test] Success: model=Pro/MiniMaxAI/MiniMax-M2.5, response="??Hi there!"
+2026-04-20 17:04:04 +08:00: [OCR] Processing file: hjb6njyys2013_97.jpg, type: selfhosted, flow: generic
+2026-04-20 17:04:04 +08:00: [OCR] baseUrl: https://api.siliconflow.cn/v1, model: PaddlePaddle/PaddleOCR-VL-1.5
+2026-04-20 17:04:04 +08:00: [OCR-Chat] Requesting: https://api.siliconflow.cn/v1/chat/completions
+2026-04-20 17:04:04 +08:00: [OCR-Chat] Model: PaddlePaddle/PaddleOCR-VL-1.5
+2026-04-20 17:04:04 +08:00: [OCR-Chat] Image size: 88883 bytes
+2026-04-20 17:04:07 +08:00: [OCR-Chat] Success: extracted 923 chars
+2026-04-20 17:04:47 +08:00: [LLM] Requesting extract with model: Pro/MiniMaxAI/MiniMax-M2.5, clientStream: true
+2026-04-20 17:04:49 +08:00: [LLM] Reading stream...
+2026-04-20 17:06:25 +08:00: [LLM] Stream complete. Total chunks: 5958, Content length: 19980, Reasoning length: 2028, Thinking model detected
+2026-04-20 17:06:25 +08:00: [LLM] Raw content preview: [{"word":"past","phonetic_uk":"pɑːst","phonetic_us":"pæst","pos":"adv","meaning_brief":"副词-过去，以往","meaning_collins":"in or during the time before the present moment","level_tag":["CET4"],"ai_example_en":"I walked past the school.","ai_example_zh":"我走过学校。","synonyms":["ago","former"],"antonyms":["future","present"],"mnemonic":"pass的过去分词形式，表示"经过"","memoryType":"recognition"},{"word":"take","phonetic_uk":"teɪk","phonetic_us":"teɪk","pos":"v","meaning_brief":"动词-拿，取","meaning_collins":"to get into o...
+2026-04-20 17:06:25 +08:00: [LLM] JSON 解析失败: Unexpected token 经 in JSON at position 343
+2026-04-20 17:06:25 +08:00: [LLM] Attempting to extract objects from content...
+2026-04-20 17:06:25 +08:00: [LLM] Extracted 56 words, streaming to client
+2026-04-20 17:06:28 +08:00: [LLM] Stream completed, sent 56 words
+2026-04-20 21:47:37 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 12:14:14 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 16:32:30 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 17:34:22 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 19:36:46 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 19:38:12 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 19:39:43 +08:00: [Reading] Built-in bing returned no results, fell back to google
+2026-04-21 19:40:12 +08:00: [Reading] Built-in bing returned no results, fell back to google
+2026-04-21 19:42:31 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 19:44:51 +08:00: [Reading] Built-in bing returned no results, fell back to google
+2026-04-21 19:45:25 +08:00: [Reading] Built-in bing returned no results, fell back to google
+2026-04-21 19:51:50 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 19:52:25 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 20:13:57 +08:00: [LLM Test] Success: model=moonshotai/kimi-k2.6, response=""
+2026-04-21 20:20:49 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 20:52:37 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 20:57:22 +08:00: [Reading] Built-in bing returned no results, fell back to google
+2026-04-21 20:58:33 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 20:59:13 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 21:02:52 +08:00: [Reading] Built-in bing returned no results, fell back to google
+2026-04-21 21:07:02 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 21:10:11 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 21:14:35 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 21:17:16 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 21:18:31 +08:00: LinguaFlash proxy listening on http://0.0.0.0:80
+2026-04-21 21:41:56 +08:00: [Reading] Built-in bing returned no results, fell back to google
+2026-04-21 21:58:55 +08:00: [Reading] Built-in bing returned no results, fell back to google
+2026-04-22 07:43:12 +08:00: LinguaFlash proxy listening on http://127.0.0.1:80
+2026-04-22 07:48:29 +08:00: LinguaFlash proxy listening on http://127.0.0.1:80
+2026-04-22 08:49:40 +08:00: LinguaFlash proxy listening on http://127.0.0.1:80
+2026-04-22 12:03:04 +08:00: LinguaFlash proxy listening on http://127.0.0.1:80
+2026-04-22 12:09:47 +08:00: LinguaFlash proxy listening on http://127.0.0.1:80
+2026-04-22 12:16:06 +08:00: LinguaFlash proxy listening on http://127.0.0.1:80
+2026-04-22 13:04:23 +08:00: LinguaFlash proxy listening on http://127.0.0.1:80
+2026-04-22 18:41:31 +08:00: LinguaFlash proxy listening on http://127.0.0.1:80
