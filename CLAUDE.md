@@ -9,7 +9,7 @@ LinguaFlash is a mobile-first English flashcard PWA (React + TypeScript + Vite) 
 ## Commands
 
 ```bash
-npm run dev          # Runs Vite dev server (port 4173) + Express API proxy (port 8787) concurrently
+npm run dev          # Runs Vite dev server (port 4173) + Express API proxy (port 8770) concurrently
 npm run dev:web      # Vite dev server only
 npm run dev:server   # Express API server only
 npm run build        # tsc -b && vite build (output to dist/)
@@ -51,8 +51,8 @@ The server blocks requests to private/internal URLs via `isAllowedUrl()`. In pro
 
 - Persistent data: IndexedDB via Dexie.js (`db.ts`)
 - Settings: localStorage (`settings.ts`)
-- API calls: Browser -> Express proxy (port 8787) -> External OCR/LLM/TTS APIs
-- In dev, Vite proxies `/api` requests to port 8787
+- API calls: Browser -> Express proxy (port 8770) -> External OCR/LLM/TTS APIs
+- In dev, Vite proxies `/api` requests to port 8770
 
 ### Key Patterns
 
@@ -84,7 +84,7 @@ wordStatuses:   [wordId+bookId], bookId, state
 ## Environment Variables (Server)
 
 ```
-PORT=8787          # API server port (default 8787)
+PORT=8770          # API server port (default 8770)
 AUTH_TOKEN=xxx     # Optional token auth for /api routes
 ```
 

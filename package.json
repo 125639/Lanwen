@@ -4,13 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm:dev:web\" \"npm:dev:server\"",
-    "dev:web": "vite",
-    "dev:server": "node --watch server/index.js",
-    "serve": "node server/index.js",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "dev": "node ./node_modules/concurrently/dist/bin/concurrently.js \"npm:dev:web\" \"npm:dev:server\"",
+    "dev:web": "node ./node_modules/vite/bin/vite.js",
+    "dev:server": "PORT=8770 node --watch server/index.js",
+    "serve": "HOST=0.0.0.0 PORT=8770 NODE_ENV=production node server/index.js",
+    "build": "node ./node_modules/typescript/lib/_tsc.js -b && node ./node_modules/vite/bin/vite.js build",
+    "lint": "node ./node_modules/eslint/bin/eslint.js .",
+    "preview": "node ./node_modules/vite/bin/vite.js preview"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.23",
@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.9.0",
+    "@playwright/test": "^1.59.1",
     "@types/node": "^25.6.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",

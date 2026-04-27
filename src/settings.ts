@@ -1,15 +1,37 @@
-import type { AppSettings, ThemePreset } from './types';
+import type { AppSettings, ThemePreset, VocabExtractMode } from './types';
+import { matchesMediaQuery } from './browser';
 
 export const SETTINGS_STORAGE_KEY = 'linguaflash_settings';
 export const ONBOARDING_DONE_KEY = 'onboarding_done';
 export const DEFAULT_WALLPAPER_IMAGE =
   'linear-gradient(135deg, #eef2ff 0%, #dbeafe 45%, #e0e7ff 100%)';
-const DEFAULT_THEME_WALLPAPERS: Record<ThemePreset, string> = {
-  classic: DEFAULT_WALLPAPER_IMAGE,
-  mist: 'linear-gradient(135deg, #ecfeff 0%, #d1fae5 42%, #ccfbf1 100%)',
-  pulse: 'linear-gradient(135deg, #eef6ff 0%, #dbeafe 40%, #d6f4ff 100%)',
+type ResolvedThemeMode = 'light' | 'dark';
+type ThemeWallpaperSet = Record<ResolvedThemeMode, string>;
+
+const DEFAULT_THEME_WALLPAPERS: Record<ThemePreset, ThemeWallpaperSet> = {
+  classic: {
+    light: DEFAULT_WALLPAPER_IMAGE,
+    dark: DEFAULT_WALLPAPER_IMAGE,
+  },
+  mist: {
+    light:
+      'radial-gradient(circle at 18% 12%, rgba(69, 104, 131, 0.08), transparent 28%), linear-gradient(180deg, #f7f3ec 0%, #f2eee6 56%, #ebe6dc 100%)',
+    dark:
+      'radial-gradient(circle at 18% 12%, rgba(157, 184, 204, 0.12), transparent 24%), linear-gradient(180deg, #121417 0%, #171b20 52%, #1e2329 100%)',
+  },
+  pulse: {
+    light:
+      'linear-gradient(rgba(8, 197, 255, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(8, 197, 255, 0.1) 1px, transparent 1px), radial-gradient(circle at 14% 18%, rgba(103, 232, 255, 0.32), transparent 24%), radial-gradient(circle at 82% 12%, rgba(8, 197, 255, 0.18), transparent 28%), linear-gradient(145deg, #f1faff 0%, #d7edff 46%, #edf9ff 100%)',
+    dark:
+      'linear-gradient(rgba(68, 231, 255, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(68, 231, 255, 0.08) 1px, transparent 1px), radial-gradient(circle at 18% 16%, rgba(68, 231, 255, 0.24), transparent 24%), radial-gradient(circle at 86% 10%, rgba(25, 192, 255, 0.18), transparent 22%), linear-gradient(145deg, #020815 0%, #071628 46%, #0c2542 100%)',
+  },
 };
 const THEME_PRESET_VALUES = new Set<ThemePreset>(['classic', 'mist', 'pulse']);
+const VOCAB_EXTRACT_MODE_VALUES = new Set<VocabExtractMode>([
+  'large_only',
+  'large_structure_small_enrich',
+  'small_only',
+]);
 const LEGACY_THEME_PRESET_ALIASES: Record<string, ThemePreset> = {
   dawn: 'classic',
   forest: 'mist',
@@ -19,11 +41,18 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'auto',
   language: 'zh-CN',
   defaultLevel: 'CET6',
+  vocabExtractMode: 'large_structure_small_enrich',
   aiAssistant: {
     enabled: true,
     displayMode: 'visible',
   },
   llm: {
+    provider: 'deepseek',
+    apiKey: '',
+    baseUrl: 'https://api.deepseek.com',
+    model: 'deepseek-chat',
+  },
+  smallLlm: {
     provider: 'deepseek',
     apiKey: '',
     baseUrl: 'https://api.deepseek.com',
@@ -48,9 +77,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   appearance: {
     preset: 'classic',
     wallpaperType: 'default',
+    motionEffects: true,
     brightness: 0.92,
     blur: 0,
     overlayOpacity: 0.04,
+    fontFamily: 'system-ui',
   },
   bgMusic: {
     enabled: false,
@@ -198,6 +229,12 @@ function normalizeThemePreset(value: unknown): ThemePreset {
   return LEGACY_THEME_PRESET_ALIASES[value] ?? DEFAULT_SETTINGS.appearance.preset;
 }
 
+function normalizeVocabExtractMode(value: unknown): VocabExtractMode {
+  return VOCAB_EXTRACT_MODE_VALUES.has(value as VocabExtractMode)
+    ? (value as VocabExtractMode)
+    : DEFAULT_SETTINGS.vocabExtractMode;
+}
+
 function normalizeSettings(settings: AppSettings): AppSettings {
   const wallpaperBase64 = sanitizeDataUrl(
     settings.appearance.wallpaperBase64,
@@ -212,6 +249,7 @@ function normalizeSettings(settings: AppSettings): AppSettings {
 
   return {
     ...settings,
+    vocabExtractMode: normalizeVocabExtractMode(settings.vocabExtractMode),
     exa: {
       ...settings.exa,
       defaultNumResults: Math.round(
@@ -232,6 +270,7 @@ function normalizeSettings(settings: AppSettings): AppSettings {
       preset: normalizeThemePreset(settings.appearance.preset),
       wallpaperType: wallpaperBase64 ? settings.appearance.wallpaperType : 'default',
       wallpaperBase64,
+      motionEffects: settings.appearance.motionEffects !== false,
       brightness: clampNumber(
         settings.appearance.brightness,
         0.2,
@@ -245,6 +284,7 @@ function normalizeSettings(settings: AppSettings): AppSettings {
         0.75,
         DEFAULT_SETTINGS.appearance.overlayOpacity,
       ),
+      fontFamily: typeof settings.appearance.fontFamily === 'string' ? settings.appearance.fontFamily : 'system-ui',
     },
     bgMusic: {
       ...settings.bgMusic,
@@ -336,16 +376,30 @@ export function loadSettings(): AppSettings {
 
 export function applyTheme(theme: AppSettings['theme']): void {
   const root = document.documentElement;
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const prefersDark = matchesMediaQuery('(prefers-color-scheme: dark)');
   const resolved = theme === 'auto' ? (prefersDark ? 'dark' : 'light') : theme;
   root.setAttribute('data-theme', resolved);
 }
 
-function getDefaultWallpaperImage(preset: ThemePreset): string {
-  return DEFAULT_THEME_WALLPAPERS[preset] ?? DEFAULT_WALLPAPER_IMAGE;
+function resolveThemeMode(theme: AppSettings['theme']): ResolvedThemeMode {
+  if (theme === 'light' || theme === 'dark') {
+    return theme;
+  }
+
+  return matchesMediaQuery('(prefers-color-scheme: dark)') ? 'dark' : 'light';
 }
 
-export function resolveWallpaperImage(appearance: AppSettings['appearance']): string {
+function getDefaultWallpaperImage(
+  preset: ThemePreset,
+  themeMode: ResolvedThemeMode,
+): string {
+  return DEFAULT_THEME_WALLPAPERS[preset]?.[themeMode] ?? DEFAULT_WALLPAPER_IMAGE;
+}
+
+export function resolveWallpaperImage(
+  appearance: AppSettings['appearance'],
+  theme: AppSettings['theme'] = 'auto',
+): string {
   const wallpaperBase64 = sanitizeDataUrl(
     appearance.wallpaperBase64,
     SAFE_IMAGE_DATA_URL,
@@ -356,16 +410,27 @@ export function resolveWallpaperImage(appearance: AppSettings['appearance']): st
     return `url("${wallpaperBase64.replace(/"/g, '%22')}")`;
   }
 
-  return getDefaultWallpaperImage(appearance.preset);
+  return getDefaultWallpaperImage(appearance.preset, resolveThemeMode(theme));
 }
 
-export function applyAppearance(appearance: AppSettings['appearance']): void {
+export function applyAppearance(
+  appearance: AppSettings['appearance'],
+  theme: AppSettings['theme'] = 'auto',
+): void {
   const root = document.documentElement;
   root.setAttribute('data-ui-theme', appearance.preset);
+  root.setAttribute('data-motion', appearance.motionEffects ? 'full' : 'off');
   root.style.setProperty('--bg-blur', `${appearance.blur}px`);
   root.style.setProperty('--bg-brightness', `${appearance.brightness}`);
   root.style.setProperty('--bg-overlay', `${appearance.overlayOpacity}`);
-  root.style.setProperty('--wallpaper-image', resolveWallpaperImage(appearance));
+  root.style.setProperty('--wallpaper-image', resolveWallpaperImage(appearance, theme));
+
+  const fontFamily = appearance.fontFamily || 'system-ui';
+  if (fontFamily === 'system-ui') {
+    root.style.setProperty('--font-family', "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif");
+  } else {
+    root.style.setProperty('--font-family', fontFamily);
+  }
 
   const wallpaperBase64 = sanitizeDataUrl(
     appearance.wallpaperBase64,
@@ -390,11 +455,11 @@ export function saveSettings(partial: Partial<AppSettings>): AppSettings {
     throw new Error('SETTINGS_STORAGE_FULL');
   }
 
-  if (partial.appearance) {
-    applyAppearance(updated.appearance);
-  }
   if (partial.theme) {
     applyTheme(updated.theme);
+  }
+  if (partial.appearance || partial.theme) {
+    applyAppearance(updated.appearance, updated.theme);
   }
 
   return updated;

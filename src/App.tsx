@@ -39,6 +39,7 @@ import type {
   WordCard,
 } from './types';
 import { createDownload } from './utils';
+import { matchesMediaQuery, subscribeToMediaQuery } from './browser';
 import { computeUserStats, getNewlyUnlocked } from './achievements';
 import { AchievementUnlockModal } from './components/AchievementUnlockModal';
 import { BottomNav } from './components/BottomNav';
@@ -58,8 +59,9 @@ import { ChatDrawer } from './components/AIAssistant/ChatDrawer';
 import { useAIAssistant } from './components/AIAssistant/aiAssistantContextStore';
 import { DesktopSidebar } from './components/DesktopSidebar';
 import { ReadingPage } from './components/ReadingPage';
+import { NAV_ITEMS } from './navItems';
 
-const DESKTOP_LAYOUT_QUERY = '(min-width: 1024px)';
+const DESKTOP_LAYOUT_QUERY = '(min-width: 768px)';
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'linguaflash.desktopSidebarCollapsed';
 const EMPTY_TASK_SUMMARY: TodayTaskSummary = {
   newCount: 0,
@@ -70,6 +72,7 @@ const EMPTY_TASK_SUMMARY: TodayTaskSummary = {
   headline: '当前还没有学习任务',
   subline: '先导入一组单词，任务中心就会自动生成今天的学习建议。',
 };
+const TAB_SEQUENCE = NAV_ITEMS.map((item) => item.key);
 
 function getPageTitle(tab: TabKey): string {
   if (tab === 'cards') return '记忆卡片';
@@ -80,14 +83,26 @@ function getPageTitle(tab: TabKey): string {
   return '词库';
 }
 
+function getPageTransitionClass(currentTab: TabKey, nextTab: TabKey): string {
+  const currentIndex = TAB_SEQUENCE.indexOf(currentTab);
+  const nextIndex = TAB_SEQUENCE.indexOf(nextTab);
+
+  if (currentIndex === -1 || nextIndex === -1 || currentIndex === nextIndex) {
+    return '';
+  }
+
+  return nextIndex > currentIndex ? 'page-enter-right' : 'page-enter-left';
+}
+
 interface PageStackProps {
   activeTab: TabKey;
   childrenMap: Record<TabKey, ReactNode>;
+  transitionClass?: string;
 }
 
-function PageStack({ activeTab, childrenMap }: PageStackProps) {
+function PageStack({ activeTab, childrenMap, transitionClass = '' }: PageStackProps) {
   return (
-    <div key={activeTab} className="page-layer active page-enter">
+    <div key={activeTab} className={`page-layer active page-enter ${transitionClass}`.trim()}>
       {childrenMap[activeTab]}
     </div>
   );
@@ -96,7 +111,7 @@ function PageStack({ activeTab, childrenMap }: PageStackProps) {
 function App() {
   const { setCurrentWordFromCard } = useAIAssistant();
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
-  const [isDesktopLayout, setIsDesktopLayout] = useState(() => window.matchMedia(DESKTOP_LAYOUT_QUERY).matches);
+  const [isDesktopLayout, setIsDesktopLayout] = useState(() => matchesMediaQuery(DESKTOP_LAYOUT_QUERY));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
       return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === '1';
@@ -106,6 +121,7 @@ function App() {
   });
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('cards');
+  const [pageTransitionClass, setPageTransitionClass] = useState('');
   const [books, setBooks] = useState<Book[]>([]);
   const [activeBookId, setActiveBookId] = useState<string | null>(null);
   const [words, setWords] = useState<WordCard[]>([]);
@@ -134,6 +150,8 @@ function App() {
   const bgMusicRef = useRef<HTMLAudioElement | null>(null);
   const nextToastId = useRef(1);
   const activeBookIdRef = useRef(activeBookId);
+  const derivedStatsRequestIdRef = useRef(0);
+  const refreshBooksRequestIdRef = useRef(0);
   activeBookIdRef.current = activeBookId;
 
   const notify = useCallback((type: Toast['type'], message: string, duration = 3000) => {
@@ -147,10 +165,14 @@ function App() {
   }, []);
 
   const loadDerivedStats = useCallback(async (bookId: string | null) => {
+    const requestId = ++derivedStatsRequestIdRef.current;
+
     if (!bookId) {
-      setSm2Cards([]);
-      setDueWordIds([]);
-      setTaskSummary(EMPTY_TASK_SUMMARY);
+      if (requestId === derivedStatsRequestIdRef.current) {
+        setSm2Cards([]);
+        setDueWordIds([]);
+        setTaskSummary(EMPTY_TASK_SUMMARY);
+      }
       return;
     }
 
@@ -165,6 +187,10 @@ function App() {
       getUnlockedAchievements(),
     ]);
 
+    if (requestId !== derivedStatsRequestIdRef.current) {
+      return;
+    }
+
     setSm2Cards(cards);
     setDueWordIds(dueIds);
     setTaskSummary(tasks);
@@ -176,7 +202,12 @@ function App() {
   }, []);
 
   const refreshBooks = useCallback(async () => {
+    const requestId = ++refreshBooksRequestIdRef.current;
     const rows = await getBooks();
+    if (requestId !== refreshBooksRequestIdRef.current) {
+      return;
+    }
+
     setBooks(rows);
 
     if (!rows.length) {
@@ -191,13 +222,28 @@ function App() {
     const nextBookId =
       currentBookId && rows.some((book) => book.id === currentBookId) ? currentBookId : rows[0].id;
 
+    if (currentBookId !== nextBookId) {
+      setWords([]);
+      setCardIndex(0);
+    }
+
     setActiveBookId(nextBookId);
     const wordRows = await getWordsByBook(nextBookId);
+    if (requestId !== refreshBooksRequestIdRef.current) {
+      return;
+    }
+
     setWords(wordRows);
     await loadDerivedStats(nextBookId);
   }, [loadDerivedStats]);
 
   const handleSelectBook = useCallback((bookId: string) => {
+    if (bookId !== activeBookIdRef.current) {
+      setWords([]);
+      setSm2Cards([]);
+      setDueWordIds([]);
+      setTaskSummary(EMPTY_TASK_SUMMARY);
+    }
     setActiveBookId(bookId);
     setCardIndex(0);
     setReviewMode(false);
@@ -205,17 +251,11 @@ function App() {
 
   useEffect(() => {
     applyTheme(settings.theme);
-    applyAppearance(settings.appearance);
+    applyAppearance(settings.appearance, settings.theme);
   }, [settings]);
 
   useEffect(() => {
-    const media = window.matchMedia(DESKTOP_LAYOUT_QUERY);
-    const listener = (event: MediaQueryListEvent) => {
-      setIsDesktopLayout(event.matches);
-    };
-
-    media.addEventListener('change', listener);
-    return () => media.removeEventListener('change', listener);
+    return subscribeToMediaQuery(DESKTOP_LAYOUT_QUERY, setIsDesktopLayout);
   }, []);
 
   useEffect(() => {
@@ -340,10 +380,23 @@ function App() {
 
   const activeTitle = useMemo(() => getPageTitle(activeTab), [activeTab]);
   const wallpaperImage = useMemo(
-    () => resolveWallpaperImage(settings.appearance),
-    [settings.appearance],
+    () => resolveWallpaperImage(settings.appearance, settings.theme),
+    [settings.appearance, settings.theme],
   );
+  const motionEnabled = settings.appearance.motionEffects;
   const updateSettings = (next: AppSettings) => setSettings(next);
+
+  const changeTab = useCallback(
+    (nextTab: TabKey) => {
+      if (nextTab === activeTab) {
+        return;
+      }
+
+      setPageTransitionClass(getPageTransitionClass(activeTab, nextTab));
+      setActiveTab(nextTab);
+    },
+    [activeTab],
+  );
 
   const handleOnboardingComplete = (partial: Partial<AppSettings>) => {
     const updated = saveSettings(partial);
@@ -382,7 +435,7 @@ function App() {
     }
 
     setReviewMode(false);
-    setActiveTab(tab);
+    changeTab(tab);
   };
 
   const openUploader = () => {
@@ -395,7 +448,7 @@ function App() {
       setExaKeyMissing(false);
       return;
     }
-    setActiveTab('library');
+    changeTab('library');
     setOpenUploaderSignal((prev) => prev + 1);
   };
 
@@ -429,7 +482,7 @@ function App() {
 
     if (pendingTabAfterSettings === 'reading' && llmReady) {
       setReviewMode(false);
-      setActiveTab('reading');
+      changeTab('reading');
     }
 
     if (
@@ -437,11 +490,11 @@ function App() {
       llmReady
     ) {
       setReviewMode(false);
-      setActiveTab(pendingTabAfterSettings);
+      changeTab(pendingTabAfterSettings);
     }
 
     if (ocrKeyMissing && settings.ocr.apiKey?.trim()) {
-      setActiveTab('library');
+      changeTab('library');
       setOpenUploaderSignal((prev) => prev + 1);
     }
 
@@ -541,17 +594,17 @@ function App() {
         onStartTodayReview={() => {
           setReviewMode(true);
           setCardIndex(0);
-          setActiveTab('en2zh');
+          changeTab('en2zh');
         }}
         onStopTodayReview={() => setReviewMode(false)}
         onStartLearn={() => {
           setReviewMode(false);
-          setActiveTab('learn');
+          changeTab('learn');
         }}
         onStartOutputPractice={() => {
           setReviewMode(true);
           setCardIndex(0);
-          setActiveTab('zh2en');
+          changeTab('zh2en');
         }}
         onEnterWeakWords={() => setShowWeakWords(true)}
         onJumpHandled={() => setJumpWordId(null)}
@@ -567,7 +620,7 @@ function App() {
         bookId={activeBookId}
         settings={settings}
         onNotify={notify}
-        onBackToCards={() => setActiveTab('cards')}
+        onBackToCards={() => changeTab('cards')}
         onRefresh={() => void refreshBooks()}
         onCurrentWordChange={handleLearnCurrentWordChange}
       />
@@ -580,7 +633,7 @@ function App() {
         bookId={activeBookId}
         onBackHome={() => {
           setReviewMode(false);
-          setActiveTab('cards');
+          changeTab('cards');
         }}
         onRefresh={() => void refreshBooks()}
         onCurrentWordChange={handleTestCurrentWordChange}
@@ -594,7 +647,7 @@ function App() {
         bookId={activeBookId}
         onBackHome={() => {
           setReviewMode(false);
-          setActiveTab('cards');
+          changeTab('cards');
         }}
         onRefresh={() => void refreshBooks()}
         onCurrentWordChange={handleTestCurrentWordChange}
@@ -618,7 +671,7 @@ function App() {
         onJumpToWord={(wordId) => {
           setJumpWordId(wordId);
           setReviewMode(false);
-          setActiveTab('cards');
+          changeTab('cards');
         }}
         onRefresh={refreshBooks}
         onNotify={notify}
@@ -627,13 +680,35 @@ function App() {
       />
     ),
   };
+  const activeBookName = books.find((book) => book.id === activeBookId)?.name ?? null;
 
   return (
     <div
       className={`app-root-shell ${isDesktopLayout ? 'desktop-shell' : ''} ${
         isDesktopLayout && sidebarCollapsed ? 'sidebar-collapsed' : ''
       }`}
+      data-motion={motionEnabled ? 'full' : 'off'}
     >
+      {motionEnabled ? (
+        <>
+          <div className="app-ambient-layer" aria-hidden="true">
+            <span className="ambient-orb orb-a" />
+            <span className="ambient-orb orb-b" />
+            <span className="ambient-orb orb-c" />
+            <span className="ambient-beam" />
+          </div>
+          <div className="particle-bg" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+        </>
+      ) : null}
       <div className="wallpaper-layer" style={{ backgroundImage: wallpaperImage }} />
       <div className="wallpaper-overlay" />
 
@@ -658,7 +733,11 @@ function App() {
           />
 
           <main className="content-area">
-            <PageStack activeTab={activeTab} childrenMap={childrenMap} />
+            <PageStack
+              activeTab={activeTab}
+              childrenMap={childrenMap}
+              transitionClass={pageTransitionClass}
+            />
           </main>
         </div>
 
@@ -669,6 +748,7 @@ function App() {
         open={showStats}
         onClose={() => setShowStats(false)}
         bookId={activeBookId}
+        bookName={activeBookName}
         words={words}
         sm2Cards={sm2Cards}
         calendarStats={calendarStats}
@@ -686,7 +766,7 @@ function App() {
         onJumpToWord={(wordId) => {
           setJumpWordId(wordId);
           setShowStats(false);
-          setActiveTab('cards');
+          changeTab('cards');
         }}
       />
 

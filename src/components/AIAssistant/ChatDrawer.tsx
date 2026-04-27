@@ -199,25 +199,49 @@ export function ChatDrawer({ settings }: ChatDrawerProps) {
         {error ? <div className="ai-chat-error">{error}</div> : null}
 
         <footer className="ai-chat-input-area">
-          <button type="button" className="tap ghost-btn" onClick={() => void handleClear()} disabled={loading}>
-            清空
-          </button>
-          <textarea
-            className="ai-chat-input"
-            value={input}
-            placeholder="输入你的问题..."
-            rows={2}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                void sendMessage();
-              }
-            }}
-          />
-          <button type="button" className="tap primary-btn" onClick={() => void sendMessage()} disabled={loading || !input.trim()}>
-            {loading ? '发送中...' : '发送'}
-          </button>
+          <div className="ai-chat-input-wrapper">
+            <button type="button" className="tap ai-chat-clear-btn" onClick={() => void handleClear()} disabled={loading} title="清空聊天">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18"></path>
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+              </svg>
+            </button>
+            <textarea
+              className="ai-chat-input"
+              value={input}
+              placeholder="输入你的问题..."
+              rows={1}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  void sendMessage();
+                }
+              }}
+            />
+            <div className="ai-chat-input-actions">
+              <button type="button" className="tap ai-chat-send-btn" onClick={() => void sendMessage()} disabled={loading || !input.trim()}>
+                {loading ? (
+                  <svg className="spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="2" x2="12" y2="6"></line>
+                    <line x1="12" y1="18" x2="12" y2="22"></line>
+                    <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+                    <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                    <line x1="2" y1="12" x2="6" y2="12"></line>
+                    <line x1="18" y1="12" x2="22" y2="12"></line>
+                    <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+                    <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                )}
+              </button>
+            </div>
+          </div>
         </footer>
       </aside>
     </>

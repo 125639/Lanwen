@@ -8,13 +8,9 @@ export function getApiBase(): string {
     return envUrl;
   }
 
-  const { protocol, hostname, port } = window.location;
+  const { port } = window.location;
 
-  if (port === '4173') {
-    return `${protocol}//${hostname}:8787`;
-  }
-
-  if (!port || port === '80' || port === '443') {
+  if (port === '4173' || !port || port === '80' || port === '443') {
     return '';
   }
 

@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { extractOCRText, extractWordsFallback, lookupWord, streamExtractWords } from '../api';
+import {
+  extractOCRText,
+  extractWordsFallback,
+  lookupWord,
+  streamExtractWords,
+  streamExtractWordsPipeline,
+  type ExtractPipelineEvent,
+} from '../api';
 import {
   deleteBook,
   deleteWord,
@@ -9,7 +16,7 @@ import {
   saveBookWithWords,
   updateWord,
 } from '../db';
-import type { AppSettings, Book, ExtractedWordDraft, PreparedFile, WordCard } from '../types';
+import type { AppSettings, Book, ExtractedWordDraft, PreparedFile, VocabExtractMode, WordCard } from '../types';
 import {
   clamp,
   compressImage,
@@ -38,6 +45,15 @@ interface LibraryPageProps {
 
 type UploadStep = 1 | 2 | 3 | 4 | 5;
 type DuplicateMode = 'skip' | 'overwrite';
+type ExtractProgress = {
+  status: string;
+  structuredCount: number;
+  completed: number;
+  total: number;
+  failed: number;
+  batchIndex: number;
+  totalBatches: number;
+};
 
 interface CandidateWord {
   id: string;
@@ -46,6 +62,38 @@ interface CandidateWord {
 }
 
 type SpeedDialAction = 'upload' | 'manual';
+
+const EXTRACT_MODE_OPTIONS: Array<{
+  value: VocabExtractMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'large_structure_small_enrich',
+    label: '大模型整理 + 小模型加工',
+    description: '默认：先还原教材结构，再逐词补全词卡，避免小模型上下文过载。',
+  },
+  {
+    value: 'large_only',
+    label: '大模型全包揽',
+    description: '直接从 OCR 文本生成完整词卡。',
+  },
+  {
+    value: 'small_only',
+    label: '小模型全流程',
+    description: '低成本模式，小模型先整理再逐词补全；若当前小模型超时，会自动尝试同系列更稳型号。',
+  },
+];
+
+const INITIAL_EXTRACT_PROGRESS: ExtractProgress = {
+  status: '正在整理 OCR 文本',
+  structuredCount: 0,
+  completed: 0,
+  total: 0,
+  failed: 0,
+  batchIndex: 0,
+  totalBatches: 0,
+};
 
 function toPreparedFile(name: string, type: string, size: number, base64: string): PreparedFile {
   return { name, type, size, base64 };
@@ -83,6 +131,9 @@ export function LibraryPage({
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrStatus, setOcrStatus] = useState('等待开始');
   const [extractingCount, setExtractingCount] = useState(0);
+  const [uploadExtractMode, setUploadExtractMode] = useState<VocabExtractMode>(settings.vocabExtractMode);
+  const [extractProgress, setExtractProgress] = useState<ExtractProgress>(INITIAL_EXTRACT_PROGRESS);
+  const [extractFailures, setExtractFailures] = useState<Array<{ word?: string; message: string }>>([]);
   const [candidateWords, setCandidateWords] = useState<CandidateWord[]>([]);
   const [duplicateMode, setDuplicateMode] = useState<DuplicateMode>('skip');
   const [processing, setProcessing] = useState(false);
@@ -110,6 +161,7 @@ export function LibraryPage({
   const [clipboardText, setClipboardText] = useState<string | null>(null);
   const [clipboardDismissed, setClipboardDismissed] = useState(false);
   const [manualWordExists, setManualWordExists] = useState(false);
+  const extractAbortRef = useRef<AbortController | null>(null);
 
   const listParentRef = useRef<HTMLDivElement | null>(null);
 
@@ -152,8 +204,15 @@ export function LibraryPage({
     if (openUploaderSignal > 0) {
       setModalOpen(true);
       setStep(1);
+      setUploadExtractMode(settings.vocabExtractMode);
     }
-  }, [openUploaderSignal]);
+  }, [openUploaderSignal, settings.vocabExtractMode]);
+
+  useEffect(() => {
+    if (!modalOpen) {
+      setUploadExtractMode(settings.vocabExtractMode);
+    }
+  }, [modalOpen, settings.vocabExtractMode]);
 
   useEffect(() => {
     if (!manualWord.trim()) {
@@ -196,6 +255,9 @@ export function LibraryPage({
     setOcrProgress(0);
     setOcrStatus('等待开始');
     setExtractingCount(0);
+    setUploadExtractMode(settings.vocabExtractMode);
+    setExtractProgress(INITIAL_EXTRACT_PROGRESS);
+    setExtractFailures([]);
     setCandidateWords([]);
     setDuplicateMode('skip');
     setProcessing(false);
@@ -204,6 +266,7 @@ export function LibraryPage({
   const openUploader = () => {
     setModalOpen(true);
     setStep(1);
+    setUploadExtractMode(settings.vocabExtractMode);
   };
 
   const closeUploader = () => {
@@ -228,10 +291,14 @@ export function LibraryPage({
       return;
     }
     const files = Array.from(fileList);
-    const supported = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    const supported = ['image/jpeg', 'image/png', 'image/webp'];
     const invalid = files.find((file) => !supported.includes(file.type));
     if (invalid) {
-      onNotify('error', `不支持的文件格式：${invalid.name}`);
+      const message =
+        invalid.type === 'application/pdf'
+          ? '当前 OCR 上传暂不支持 PDF，请先将 PDF 页面导出为图片'
+          : `不支持的文件格式：${invalid.name}`;
+      onNotify('error', message);
       return;
     }
     setSelectedFiles(files);
@@ -285,8 +352,16 @@ export function LibraryPage({
   };
 
   const handleExtractWords = async () => {
-    if (!settings.llm.apiKey) {
+    const selectedMode = uploadExtractMode;
+    const needsLargeModel = selectedMode !== 'small_only';
+    const needsSmallModel = selectedMode !== 'large_only';
+
+    if (needsLargeModel && !settings.llm.apiKey.trim()) {
       onNotify('error', 'LLM API Key 未配置，请先在设置中填写');
+      return;
+    }
+    if (needsSmallModel && !settings.smallLlm.apiKey.trim()) {
+      onNotify('error', '小模型 API Key 未配置，请先在设置中填写');
       return;
     }
     if (!ocrText.trim()) {
@@ -294,91 +369,230 @@ export function LibraryPage({
       return;
     }
 
+    const aborted = () => extractAbortRef.current?.signal.aborted ?? false;
+    extractAbortRef.current = new AbortController();
+
     setStep(4);
     setProcessing(true);
     setCandidateWords([]);
     setExtractingCount(0);
+    setExtractFailures([]);
+    setExtractProgress({
+      ...INITIAL_EXTRACT_PROGRESS,
+      status: selectedMode === 'large_only' ? '正在生成完整词卡' : '正在整理 OCR 文本',
+    });
 
     const drafts: ExtractedWordDraft[] = [];
 
+    const appendDraft = (chunk: ExtractedWordDraft) => {
+      if (aborted()) return;
+      drafts.push(chunk);
+      const normalized = normalizeExtractedWord(chunk as Partial<WordCard> & { word?: string });
+      if (!normalized) {
+        return;
+      }
+      setExtractingCount((prev) => prev + 1);
+      setCandidateWords((prev) => [
+        ...prev,
+        {
+          id: `${Date.now()}-${prev.length}`,
+          selected: true,
+          data: normalized,
+        },
+      ]);
+    };
+
+    const applyPipelineEvent = (event: ExtractPipelineEvent) => {
+      if (aborted()) return;
+      if (event.type === 'status') {
+        setExtractProgress((prev) => ({
+          ...prev,
+          status: event.message || prev.status,
+        }));
+        return;
+      }
+
+      if (event.type === 'structured') {
+        setExtractProgress((prev) => ({
+          ...prev,
+          structuredCount: event.count,
+          total: event.total ?? prev.total,
+          status: `已整理 ${event.count} 个词条`,
+        }));
+        return;
+      }
+
+      if (event.type === 'batch') {
+        setExtractProgress((prev) => ({
+          ...prev,
+          batchIndex: event.batchIndex,
+          totalBatches: event.totalBatches,
+          completed: event.completed ?? prev.completed,
+          total: event.total ?? prev.total,
+          failed: event.failed ?? prev.failed,
+          status: `正在补全第 ${event.batchIndex}/${event.totalBatches} 批`,
+        }));
+        return;
+      }
+
+      if (event.type === 'word') {
+        setExtractProgress((prev) => ({
+          ...prev,
+          completed: event.completed,
+          total: event.total,
+          failed: event.failed,
+          status: `已完成 ${event.completed} / ${event.total || event.completed}，失败 ${event.failed}`,
+        }));
+        return;
+      }
+
+      if (event.type === 'failure') {
+        setExtractProgress((prev) => ({
+          ...prev,
+          failed: event.failed,
+          status: `已完成 ${prev.completed} / ${prev.total || prev.completed}，失败 ${event.failed}`,
+        }));
+        setExtractFailures((prev) => [
+          ...prev,
+          ...(event.items?.length
+            ? event.items.map((item) => ({ word: item.word, message: event.message }))
+            : [{ message: event.message }]),
+        ]);
+        return;
+      }
+
+      if (event.type === 'complete') {
+        setExtractProgress((prev) => ({
+          ...prev,
+          completed: event.completed,
+          total: event.total,
+          failed: event.failed,
+          status: `已完成 ${event.completed} / ${event.total || event.completed}，失败 ${event.failed}`,
+        }));
+        setExtractFailures(event.failures ?? []);
+      }
+    };
+
+    const runLegacyLargeExtract = async (streamErrorMsg: string) => {
+      drafts.length = 0;
+      setCandidateWords([]);
+      setExtractingCount(0);
+      setExtractProgress({
+        ...INITIAL_EXTRACT_PROGRESS,
+        status: '正在使用兼容提取路径',
+      });
+
+      try {
+        await streamExtractWords(
+          {
+            ocrText,
+            levelTag: settings.defaultLevel,
+            settings,
+          },
+          appendDraft,
+        );
+
+        if (!drafts.length) {
+          throw new Error('未提取到任何单词，请检查 OCR 文本或 API 配置');
+        }
+
+        setStep(5);
+      } catch (legacyStreamError) {
+        const legacyStreamMsg = legacyStreamError instanceof Error ? legacyStreamError.message : '流式提取失败';
+        const noRetry =
+          legacyStreamError instanceof Error && (legacyStreamError as Error & { noRetry?: boolean }).noRetry;
+
+        if (noRetry) {
+          onNotify('error', legacyStreamMsg);
+          setStep(3);
+          return;
+        }
+
+        try {
+          const fallback = await extractWordsFallback({
+            ocrText,
+            levelTag: settings.defaultLevel,
+            settings,
+          });
+
+          if (!Array.isArray(fallback) || fallback.length === 0) {
+            throw new Error('LLM 返回空结果');
+          }
+
+          const mapped = fallback
+            .map((item, index) => {
+              const normalized = normalizeExtractedWord(item as Partial<WordCard> & { word?: string });
+              if (!normalized) return null;
+              return {
+                id: `${Date.now()}-${index}`,
+                selected: true,
+                data: normalized,
+              };
+            })
+            .filter(Boolean) as CandidateWord[];
+
+          if (!mapped.length) {
+            throw new Error('未能解析有效单词');
+          }
+
+          setCandidateWords(mapped);
+          setExtractingCount(mapped.length);
+          setExtractProgress((prev) => ({
+            ...prev,
+            completed: mapped.length,
+            total: mapped.length,
+            status: `已完成 ${mapped.length} / ${mapped.length}，失败 0`,
+          }));
+          setStep(5);
+        } catch (fallbackError) {
+          const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : '未知错误';
+          onNotify('error', `提取失败: ${fallbackMsg} (Pipeline: ${streamErrorMsg}; 兼容流式: ${legacyStreamMsg})`);
+          setStep(3);
+        }
+      }
+    };
+
     try {
-      await streamExtractWords(
+      const result = await streamExtractWordsPipeline(
         {
           ocrText,
           levelTag: settings.defaultLevel,
           settings,
+          mode: selectedMode,
+          batchSize: 1,
         },
-        (chunk) => {
-          drafts.push(chunk);
-          const normalized = normalizeExtractedWord(chunk as Partial<WordCard> & { word?: string });
-          if (!normalized) {
-            return;
-          }
-          setExtractingCount((prev) => prev + 1);
-          setCandidateWords((prev) => [
-            ...prev,
-            {
-              id: `${Date.now()}-${prev.length}`,
-              selected: true,
-              data: normalized,
-            },
-          ]);
-        },
+        appendDraft,
+        applyPipelineEvent,
       );
 
       if (!drafts.length) {
         throw new Error('未提取到任何单词，请检查 OCR 文本或 API 配置');
       }
 
-      setStep(5);
-    } catch (streamError) {
-      const streamErrorMsg = streamError instanceof Error ? streamError.message : '流式提取失败';
-      const noRetry = streamError instanceof Error && (streamError as Error & { noRetry?: boolean }).noRetry;
+      if (result.failed > 0) {
+        onNotify('warning', '部分词处理失败，可稍后重试');
+      }
 
-      // If server says don't retry (e.g., thinking model used all tokens), skip fallback
-      if (noRetry) {
-        onNotify('error', streamErrorMsg);
-        setStep(3);
+      if (!aborted()) {
+        setStep(5);
+      }
+    } catch (streamError) {
+      if (aborted()) {
         return;
       }
 
-      try {
-        const fallback = await extractWordsFallback({
-          ocrText,
-          levelTag: settings.defaultLevel,
-          settings,
-        });
+      const streamErrorMsg = streamError instanceof Error ? streamError.message : '流式提取失败';
 
-        if (!Array.isArray(fallback) || fallback.length === 0) {
-          throw new Error('LLM 返回空结果');
-        }
-
-        const mapped = fallback
-          .map((item, index) => {
-            const normalized = normalizeExtractedWord(item as Partial<WordCard> & { word?: string });
-            if (!normalized) return null;
-            return {
-              id: `${Date.now()}-${index}`,
-              selected: true,
-              data: normalized,
-            };
-          })
-          .filter(Boolean) as CandidateWord[];
-
-        if (!mapped.length) {
-          throw new Error('未能解析有效单词');
-        }
-
-        setCandidateWords(mapped);
-        setExtractingCount(mapped.length);
-        setStep(5);
-      } catch (fallbackError) {
-        const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : '未知错误';
-        onNotify('error', `提取失败: ${fallbackMsg} (流式: ${streamErrorMsg})`);
-        setStep(3);
+      if (selectedMode === 'large_only') {
+        await runLegacyLargeExtract(streamErrorMsg);
+        return;
       }
+
+      onNotify('error', `提取失败: ${streamErrorMsg}`);
+      setStep(3);
     } finally {
       setProcessing(false);
+      extractAbortRef.current = null;
     }
   };
 
@@ -394,6 +608,8 @@ export function LibraryPage({
   }, [candidateWords, words]);
 
   const selectedCount = candidateWords.filter((item) => item.selected).length;
+  const selectedExtractModeOption =
+    EXTRACT_MODE_OPTIONS.find((option) => option.value === uploadExtractMode) ?? EXTRACT_MODE_OPTIONS[0];
 
   const handleSaveSelected = async () => {
     if (!selectedCount) {
@@ -634,6 +850,7 @@ export function LibraryPage({
                 setStep(3);
                 setBookName(activeBook?.name ?? '从剪贴板提取');
                 setOcrText(clipboardText);
+                setUploadExtractMode(settings.vocabExtractMode);
                 setClipboardDismissed(true);
               }}
             >
@@ -1052,13 +1269,13 @@ export function LibraryPage({
                 <label className="upload-dropzone">
                   <input
                     type="file"
-                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    accept="image/jpeg,image/png,image/webp"
                     multiple
                     onChange={(event) => handleFilesPicked(event.target.files)}
                   />
                   <p className="upload-icon">📁</p>
                   <p>点击或拖拽上传</p>
-                  <small>支持 JPG, PNG, PDF</small>
+                  <small>支持 JPG, PNG, WEBP</small>
                 </label>
 
                 {selectedFiles.length ? (
@@ -1106,6 +1323,25 @@ export function LibraryPage({
                 <p className="subtext">你可以在提取单词前编辑以下文本</p>
                 <textarea value={ocrText} onChange={(event) => setOcrText(event.target.value)} />
                 <p className="text-count">{ocrText.length} 字符</p>
+                <div className="upload-mode-panel">
+                  <div className="upload-mode-header">
+                    <strong>词汇提取模式</strong>
+                    <span>本次上传</span>
+                  </div>
+                  <div className="upload-mode-options">
+                    {EXTRACT_MODE_OPTIONS.map((option) => (
+                      <button
+                        type="button"
+                        key={option.value}
+                        className={`tap upload-mode-option ${uploadExtractMode === option.value ? 'active' : ''}`}
+                        onClick={() => setUploadExtractMode(option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="upload-mode-description">{selectedExtractModeOption.description}</p>
+                </div>
                 <div className="row-buttons">
                   <button type="button" className="tap ghost-btn" onClick={() => void startOCR()}>
                     重新识别
@@ -1120,8 +1356,32 @@ export function LibraryPage({
             {step === 4 ? (
               <section className="upload-step">
                 <div className="spinner" />
-                <h4>AI 正在分析词汇...</h4>
-                <p className="subtext">已找到 {extractingCount} 个单词...</p>
+                <h4>AI 正在处理词汇...</h4>
+                <p className="processing-status">{extractProgress.status}</p>
+                <div className="extract-progress-grid">
+                  <div>
+                    <span>已整理</span>
+                    <strong>{extractProgress.structuredCount}</strong>
+                  </div>
+                  <div>
+                    <span>完成</span>
+                    <strong>
+                      {extractProgress.completed}
+                      {extractProgress.total ? ` / ${extractProgress.total}` : ''}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>失败</span>
+                    <strong>{extractProgress.failed}</strong>
+                  </div>
+                </div>
+                {extractProgress.totalBatches > 0 ? (
+                  <p className="subtext">
+                    正在补全第 {extractProgress.batchIndex}/{extractProgress.totalBatches} 批
+                  </p>
+                ) : (
+                  <p className="subtext">已生成 {extractingCount} 张词卡</p>
+                )}
                 <div className="stream-preview">
                   {candidateWords.slice(-8).map((item) => (
                     <div className="stream-word-card" key={item.id}>
@@ -1131,13 +1391,38 @@ export function LibraryPage({
                     </div>
                   ))}
                 </div>
+                <button
+                  type="button"
+                  className="tap text-danger-btn"
+                  onClick={() => {
+                    extractAbortRef.current?.abort();
+                    setProcessing(false);
+                    setStep(3);
+                  }}
+                >
+                  取消提取
+                </button>
               </section>
             ) : null}
 
             {step === 5 ? (
               <section className="upload-step">
                 <h4>确认保存 ({candidateWords.length} 个单词)</h4>
-                <p className="subtext">你可以取消选择不需要的单词</p>
+                <p className="subtext">
+                  {extractFailures.length ? '部分词处理失败，可稍后重试' : '你可以取消选择不需要的单词'}
+                </p>
+                {extractFailures.length ? (
+                  <div className="extract-failure-banner">
+                    <strong>失败 {extractFailures.length} 项</strong>
+                    <span>
+                      {extractFailures
+                        .slice(0, 3)
+                        .map((item) => item.word || item.message)
+                        .join('、')}
+                      {extractFailures.length > 3 ? ' 等' : ''}
+                    </span>
+                  </div>
+                ) : null}
                 <button type="button" className="tap ghost-btn" onClick={toggleSelectAll}>
                   {candidateWords.every((item) => item.selected) ? '取消全选' : '全选'}
                 </button>

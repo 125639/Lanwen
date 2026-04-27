@@ -35,6 +35,9 @@ export const CHART_STYLE = {
 
 // X 轴日期格式化
 export function formatDateLabel(dateKey: string): string {
-  const d = new Date(dateKey);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+  const [year, month, day] = dateKey.split('-').map(Number);
+  if (!year || !month || !day) {
+    return dateKey;
+  }
+  return `${month}/${day}`;
 }

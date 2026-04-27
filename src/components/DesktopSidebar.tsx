@@ -18,7 +18,7 @@ export function DesktopSidebar({ activeTab, onChange, collapsed, onToggleCollaps
         </div>
         <button
           type="button"
-          className="tap desktop-sidebar-toggle"
+          className="tap desktop-sidebar-toggle ripple-btn"
           onClick={onToggleCollapsed}
           aria-label={collapsed ? '展开侧边栏' : '收起侧边栏'}
           title={collapsed ? '展开侧边栏' : '收起侧边栏'}
@@ -34,7 +34,7 @@ export function DesktopSidebar({ activeTab, onChange, collapsed, onToggleCollaps
             <button
               key={item.key}
               type="button"
-              className={`tap desktop-nav-item ${active ? 'active' : ''}`}
+              className={`tap desktop-nav-item ripple-btn ${active ? 'active' : ''}`}
               onClick={() => onChange(item.key)}
               title={collapsed ? item.label : undefined}
             >

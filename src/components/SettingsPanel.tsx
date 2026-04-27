@@ -1,11 +1,13 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import { testLLMConnection, testOCRConnection } from '../api';
+import { testLLMConnection, testOCRConnection, type TestConnectionDiagnostic } from '../api';
+import { matchesMediaQuery, subscribeToMediaQuery } from '../browser';
 import { DEFAULT_SETTINGS, saveSettings } from '../settings';
 import type {
   AppSettings,
   SentenceFeedbackCriterion,
   SettingsGroup,
   ThemePreset,
+  VocabExtractMode,
 } from '../types';
 
 interface SettingsPanelProps {
@@ -21,6 +23,23 @@ interface SettingsPanelProps {
   onResetData: () => void;
   notify?: (type: 'success' | 'error' | 'warning' | 'info', message: string) => void;
 }
+
+type LlmProvider = AppSettings['llm']['provider'];
+
+const LLM_PROVIDER_PRESETS: Record<Exclude<LlmProvider, 'custom'>, { baseUrl: string; model: string }> = {
+  deepseek: {
+    baseUrl: 'https://api.deepseek.com',
+    model: 'deepseek-chat',
+  },
+  openai: {
+    baseUrl: 'https://api.openai.com',
+    model: 'gpt-4o-mini',
+  },
+  zhipu: {
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    model: 'glm-4-flash',
+  },
+};
 
 const GROUPS: Array<{ key: SettingsGroup; label: string; icon: React.ReactNode }> = [
   {
@@ -151,6 +170,28 @@ const SENTENCE_FEEDBACK_OPTIONS: Array<{
   { key: 'score', label: '总分(0-100)' },
 ];
 
+const VOCAB_EXTRACT_MODE_OPTIONS: Array<{
+  value: VocabExtractMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'large_structure_small_enrich',
+    label: '大模型整理 + 小模型加工',
+    description: '默认模式：先还原教材结构，再逐词补全词卡。',
+  },
+  {
+    value: 'large_only',
+    label: '大模型全包揽',
+    description: '从 OCR 文本直接生成完整词卡，适合上下文较长的材料。',
+  },
+  {
+    value: 'small_only',
+    label: '小模型全流程',
+    description: '低成本模式，小模型先整理再逐词补全；若超时会自动尝试同系列更稳型号。',
+  },
+];
+
 const THEME_MODE_OPTIONS: Array<{
   value: AppSettings['theme'];
   label: string;
@@ -248,26 +289,28 @@ const THEME_PRESET_OPTIONS: Array<{
   },
   {
     value: 'mist',
-    label: '留白',
-    description: '更简约安静，阅读和记忆时视觉压力更低',
+    label: '简约版',
+    description: '暖白留白和低噪边界，适合长时间阅读与背词',
     preview: {
-      background: 'linear-gradient(135deg, #ECFEFF 0%, #D1FAE5 45%, #CCFBF1 100%)',
-      glow: 'rgba(20, 184, 166, 0.4)',
-      surface: 'rgba(255, 255, 255, 0.9)',
-      accent: '#0F766E',
-      line: 'rgba(16, 42, 45, 0.16)',
+      background:
+        'radial-gradient(circle at 18% 12%, rgba(69, 104, 131, 0.14), transparent 28%), linear-gradient(180deg, #F7F3EC 0%, #F2EEE6 56%, #EBE6DC 100%)',
+      glow: 'rgba(39, 68, 93, 0.18)',
+      surface: 'rgba(255, 253, 248, 0.94)',
+      accent: '#27445D',
+      line: 'rgba(39, 68, 93, 0.12)',
     },
   },
   {
     value: 'pulse',
-    label: '星链',
-    description: '冷光层次更强，整体更偏科技感与未来感',
+    label: '科技感',
+    description: '冷光网格和霓虹描边更强，整体更偏未来感',
     preview: {
-      background: 'linear-gradient(135deg, #EEF6FF 0%, #DBEAFE 42%, #D6F4FF 100%)',
-      glow: 'rgba(0, 191, 255, 0.4)',
-      surface: 'rgba(248, 251, 255, 0.92)',
-      accent: '#0EA5E9',
-      line: 'rgba(10, 22, 40, 0.16)',
+      background:
+        'radial-gradient(circle at 14% 18%, rgba(103, 232, 255, 0.34), transparent 24%), radial-gradient(circle at 82% 12%, rgba(8, 197, 255, 0.2), transparent 28%), linear-gradient(145deg, #F1FAFF 0%, #D7EDFF 46%, #EDF9FF 100%)',
+      glow: 'rgba(8, 197, 255, 0.34)',
+      surface: 'rgba(245, 250, 255, 0.8)',
+      accent: '#08C5FF',
+      line: 'rgba(4, 30, 58, 0.18)',
     },
   },
 ];
@@ -338,9 +381,9 @@ function stepFloat(value: number, delta: number, min: number, max: number): numb
   return Math.min(max, Math.max(min, next));
 }
 
-function MiniPreviewCard() {
+function MiniPreviewCard({ motionEnabled }: { motionEnabled: boolean }) {
   return (
-    <div className="appearance-preview">
+    <div className={`appearance-preview ${motionEnabled ? 'motion-on' : 'motion-off'}`}>
       <div className="appearance-preview-topline">
         <span className="appearance-preview-chip" />
         <span className="appearance-preview-chip secondary" />
@@ -349,6 +392,10 @@ function MiniPreviewCard() {
       <div className="mini-phonetic">/dɪˈspætʃ/</div>
       <div className="mini-line" />
       <div className="mini-line short" />
+      <div className="motion-preview-rail" aria-hidden="true">
+        <span className="motion-preview-dot" />
+        <span className="motion-preview-dot secondary" />
+      </div>
       <div className="mini-pill-row">
         <span className="mini-pill" />
         <span className="mini-pill faint" />
@@ -432,6 +479,12 @@ function SelectMenu<T extends string>({
   );
 }
 
+function getDiagnosticStatusText(status: TestConnectionDiagnostic['status']): string {
+  if (status === 'success') return '正常';
+  if (status === 'error') return '失败';
+  return '注意';
+}
+
 export function SettingsPanel({
   settings,
   initialGroup,
@@ -447,15 +500,19 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const [group, setGroup] = useState<SettingsGroup>(initialGroup ?? 'general');
   const [showLlmKey, setShowLlmKey] = useState(false);
+  const [showSmallLlmKey, setShowSmallLlmKey] = useState(false);
   const [showExaKey, setShowExaKey] = useState(false);
   const [showOcrKey, setShowOcrKey] = useState(false);
   const [showAzureKey, setShowAzureKey] = useState(false);
-  const [isDesktop, setIsDesktop] = useState(() => window.matchMedia('(min-width: 768px)').matches);
+  const [isDesktop, setIsDesktop] = useState(() => matchesMediaQuery('(min-width: 768px)'));
   const [showAdvancedLearn, setShowAdvancedLearn] = useState(false);
 
   // Test connection states
   const [llmTestStatus, setLlmTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [llmTestMessage, setLlmTestMessage] = useState('');
+  const [llmTestAdvice, setLlmTestAdvice] = useState('');
+  const [llmDiagnostics, setLlmDiagnostics] = useState<TestConnectionDiagnostic[]>([]);
+  const [showLlmDiagnostics, setShowLlmDiagnostics] = useState(false);
   const [ocrTestStatus, setOcrTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [ocrTestMessage, setOcrTestMessage] = useState('');
 
@@ -463,13 +520,20 @@ export function SettingsPanel({
     if (!settings.llm.apiKey) {
       setLlmTestStatus('error');
       setLlmTestMessage('请先填写 API Key');
+      setLlmTestAdvice('');
+      setLlmDiagnostics([]);
       return;
     }
     setLlmTestStatus('testing');
     setLlmTestMessage('测试中...');
+    setLlmTestAdvice('');
+    setLlmDiagnostics([]);
+    setShowLlmDiagnostics(false);
     const result = await testLLMConnection(settings);
     setLlmTestStatus(result.success ? 'success' : 'error');
     setLlmTestMessage(result.success && result.latency ? `${result.message} (${result.latency}ms)` : result.message);
+    setLlmTestAdvice(result.advice ?? '');
+    setLlmDiagnostics(result.diagnostics ?? []);
   };
 
   const handleTestOCR = async () => {
@@ -492,18 +556,64 @@ export function SettingsPanel({
   }, [initialGroup]);
 
   useEffect(() => {
-    const media = window.matchMedia('(min-width: 768px)');
-    const listener = (event: MediaQueryListEvent) => {
-      setIsDesktop(event.matches);
-    };
-
-    media.addEventListener('change', listener);
-    return () => media.removeEventListener('change', listener);
+    return subscribeToMediaQuery('(min-width: 768px)', setIsDesktop);
   }, []);
 
   const patchSettings = (partial: Partial<AppSettings>) => {
     const updated = saveSettings(partial);
     onSettingsChange(updated);
+  };
+
+  const patchLlmProvider = (provider: LlmProvider) => {
+    const current = settings.llm;
+    const previousPreset = current.provider === 'custom' ? null : LLM_PROVIDER_PRESETS[current.provider];
+    const nextPreset = provider === 'custom' ? null : LLM_PROVIDER_PRESETS[provider];
+    const currentBaseUrl = current.baseUrl.trim();
+    const currentModel = current.model.trim();
+    const knownPresets = Object.values(LLM_PROVIDER_PRESETS);
+    const isKnownPresetBaseUrl = knownPresets.some((preset) => preset.baseUrl === currentBaseUrl);
+    const isKnownPresetModel = knownPresets.some((preset) => preset.model === currentModel);
+
+    patchSettings({
+      llm: {
+        ...current,
+        provider,
+        baseUrl:
+          nextPreset && (!currentBaseUrl || currentBaseUrl === previousPreset?.baseUrl || isKnownPresetBaseUrl)
+            ? nextPreset.baseUrl
+            : current.baseUrl,
+        model:
+          nextPreset && (!currentModel || currentModel === previousPreset?.model || isKnownPresetModel)
+            ? nextPreset.model
+            : current.model,
+      },
+    });
+  };
+
+  const patchSmallLlmProvider = (provider: LlmProvider) => {
+    const current = settings.smallLlm;
+    const previousPreset = current.provider === 'custom' ? null : LLM_PROVIDER_PRESETS[current.provider];
+    const nextPreset = provider === 'custom' ? null : LLM_PROVIDER_PRESETS[provider];
+    const currentBaseUrl = current.baseUrl.trim();
+    const currentModel = current.model.trim();
+    const knownPresets = Object.values(LLM_PROVIDER_PRESETS);
+    const isKnownPresetBaseUrl = knownPresets.some((preset) => preset.baseUrl === currentBaseUrl);
+    const isKnownPresetModel = knownPresets.some((preset) => preset.model === currentModel);
+
+    patchSettings({
+      smallLlm: {
+        ...current,
+        provider,
+        baseUrl:
+          nextPreset && (!currentBaseUrl || currentBaseUrl === previousPreset?.baseUrl || isKnownPresetBaseUrl)
+            ? nextPreset.baseUrl
+            : current.baseUrl,
+        model:
+          nextPreset && (!currentModel || currentModel === previousPreset?.model || isKnownPresetModel)
+            ? nextPreset.model
+            : current.model,
+      },
+    });
   };
 
   const patchSm2 = (partial: Partial<AppSettings['sm2']>) => {
@@ -1138,6 +1248,27 @@ export function SettingsPanel({
 
       {group === 'model' ? (
         <section>
+          <div className="setting-group-title">词汇提取</div>
+          <div className="setting-group">
+            <SettingsItem>
+              <div>
+                <strong>默认提取模式</strong>
+                <div className="setting-hint">
+                  {VOCAB_EXTRACT_MODE_OPTIONS.find((option) => option.value === settings.vocabExtractMode)
+                    ?.description ?? ''}
+                </div>
+              </div>
+              <SelectMenu
+                value={settings.vocabExtractMode}
+                options={VOCAB_EXTRACT_MODE_OPTIONS.map((option) => ({
+                  label: option.label,
+                  value: option.value,
+                }))}
+                onChange={(value) => patchSettings({ vocabExtractMode: value })}
+              />
+            </SettingsItem>
+          </div>
+
           <div className="setting-group-title">LLM 配置</div>
           <div className="setting-group">
             <SettingsItem>
@@ -1152,7 +1283,7 @@ export function SettingsPanel({
                   { label: 'Zhipu', value: 'zhipu' },
                   { label: 'Custom', value: 'custom' },
                 ]}
-                onChange={(provider) => patchSettings({ llm: { ...settings.llm, provider } })}
+                onChange={patchLlmProvider}
               />
             </SettingsItem>
 
@@ -1222,6 +1353,97 @@ export function SettingsPanel({
             </SettingsItem>
           </div>
 
+          <div className="setting-group-title">小模型配置</div>
+          <div className="setting-group">
+            <SettingsItem>
+              <div>
+                <strong>Small LLM Provider</strong>
+                <div className="setting-hint">用于混合模式和小模型全流程的分批加工</div>
+              </div>
+              <SelectMenu
+                value={settings.smallLlm.provider}
+                options={[
+                  { label: 'DeepSeek', value: 'deepseek' },
+                  { label: 'OpenAI', value: 'openai' },
+                  { label: 'Zhipu', value: 'zhipu' },
+                  { label: 'Custom', value: 'custom' },
+                ]}
+                onChange={patchSmallLlmProvider}
+              />
+            </SettingsItem>
+
+            <SettingsItem>
+              <div>
+                <strong>Small API Key</strong>
+              </div>
+              <div className="input-inline">
+                <input
+                  className="setting-input"
+                  type={showSmallLlmKey ? 'text' : 'password'}
+                  value={settings.smallLlm.apiKey}
+                  onChange={(event) =>
+                    patchSettings({ smallLlm: { ...settings.smallLlm, apiKey: event.target.value } })
+                  }
+                  placeholder="sk-..."
+                />
+                <button type="button" className="tap inline-eye" onClick={() => setShowSmallLlmKey((prev) => !prev)}>
+                  👁
+                </button>
+              </div>
+            </SettingsItem>
+
+            <SettingsItem>
+              <div>
+                <strong>Small Base URL</strong>
+              </div>
+              <input
+                className="setting-input"
+                value={settings.smallLlm.baseUrl}
+                onChange={(event) =>
+                  patchSettings({ smallLlm: { ...settings.smallLlm, baseUrl: event.target.value } })
+                }
+              />
+            </SettingsItem>
+
+            <SettingsItem>
+              <div>
+                <strong>Small Model</strong>
+              </div>
+              <input
+                className="setting-input"
+                value={settings.smallLlm.model}
+                onChange={(event) =>
+                  patchSettings({ smallLlm: { ...settings.smallLlm, model: event.target.value } })
+                }
+              />
+            </SettingsItem>
+
+            <SettingsItem>
+              <div>
+                <strong>Small Temperature</strong>
+                <div className="setting-hint">留空自动，某些模型需设为 1</div>
+              </div>
+              <input
+                className="setting-input"
+                type="number"
+                min="0"
+                max="2"
+                step="0.1"
+                placeholder="自动"
+                value={settings.smallLlm.temperature ?? ''}
+                onChange={(event) => {
+                  const val = event.target.value;
+                  patchSettings({
+                    smallLlm: {
+                      ...settings.smallLlm,
+                      temperature: val === '' ? undefined : Number(val),
+                    },
+                  });
+                }}
+              />
+            </SettingsItem>
+          </div>
+
           <div className="setting-group-title">连接测试</div>
           <div className="setting-group">
             <SettingsItem>
@@ -1240,6 +1462,33 @@ export function SettingsPanel({
                 </button>
                 {llmTestMessage ? (
                   <div className={`test-connection-message ${llmTestStatus}`}>{llmTestMessage}</div>
+                ) : null}
+                {llmDiagnostics.length > 0 ? (
+                  <button
+                    type="button"
+                    className="tap connection-detail-toggle"
+                    onClick={() => setShowLlmDiagnostics((prev) => !prev)}
+                    aria-expanded={showLlmDiagnostics}
+                  >
+                    {showLlmDiagnostics ? '收起详情' : '查看详情'}
+                  </button>
+                ) : null}
+                {showLlmDiagnostics && llmDiagnostics.length > 0 ? (
+                  <div className="connection-diagnostics">
+                    {llmTestAdvice ? <p className="connection-advice">{llmTestAdvice}</p> : null}
+                    {llmDiagnostics.map((item) => (
+                      <div className={`connection-diagnostic ${item.status}`} key={`${item.key}-${item.label}`}>
+                        <span className="connection-diagnostic-dot" />
+                        <div className="connection-diagnostic-body">
+                          <strong>
+                            {item.label}
+                            <span>{getDiagnosticStatusText(item.status)}</span>
+                          </strong>
+                          <p>{item.message}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 ) : null}
               </div>
             </SettingsItem>
@@ -1605,6 +1854,52 @@ export function SettingsPanel({
 
       {group === 'appearance' ? (
         <section>
+          <div className="setting-group-title">排版</div>
+          <div className="setting-group">
+            <SettingsItem>
+              <div>
+                <strong>全局字体</strong>
+                <div className="setting-hint">选择你喜欢的显示字体</div>
+              </div>
+              <SelectMenu
+                value={settings.appearance.fontFamily || 'system-ui'}
+                options={[
+                  { label: '系统默认', value: 'system-ui' },
+                  { label: '无衬线体 (Sans-serif)', value: 'sans-serif' },
+                  { label: '衬线体 (Serif)', value: 'serif' },
+                  { label: '等宽字体 (Monospace)', value: 'monospace' },
+                  { label: '楷体', value: 'KaiTi, serif' },
+                  { label: '宋体', value: 'SimSun, serif' },
+                  { label: '微软雅黑', value: '"Microsoft YaHei", sans-serif' },
+                ]}
+                onChange={(value) =>
+                  patchSettings({ appearance: { ...settings.appearance, fontFamily: value } })
+                }
+              />
+            </SettingsItem>
+          </div>
+
+          <div className="setting-group-title">动态效果</div>
+          <div className="setting-group">
+            <SettingsItem>
+              <div>
+                <strong>界面动效</strong>
+                <div className="setting-hint">控制背景漂浮、页面切换和导航强调动画</div>
+              </div>
+              <ToggleSwitch
+                checked={settings.appearance.motionEffects}
+                onChange={(motionEffects) =>
+                  patchSettings({
+                    appearance: {
+                      ...settings.appearance,
+                      motionEffects,
+                    },
+                  })
+                }
+              />
+            </SettingsItem>
+          </div>
+
           <div className="setting-group-title">壁纸</div>
           <div className="setting-group">
             <SettingsItem>
@@ -1773,7 +2068,7 @@ export function SettingsPanel({
           </div>
 
           <div className="appearance-preview-wrap">
-            <MiniPreviewCard />
+            <MiniPreviewCard motionEnabled={settings.appearance.motionEffects} />
           </div>
         </section>
       ) : null}

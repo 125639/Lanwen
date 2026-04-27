@@ -110,6 +110,46 @@ function now(): number {
   return Date.now();
 }
 
+function isLearnedWordState(state: WordStatus['state']): boolean {
+  return state === 'known' || state === 'unknown' || state === 'wrong';
+}
+
+function shouldCountAsNewLearning(
+  existing: WordStatus | undefined,
+  nextState: WordStatus['state'],
+): boolean {
+  return isLearnedWordState(nextState) && (!existing || existing.state === 'new' || existing.state === 'deleted');
+}
+
+async function incrementDailyNewLearning(timestamp = now()): Promise<void> {
+  const dateKey = getDateKey(timestamp);
+  const existingDaily = await db.dailyStats.get(dateKey);
+  const nightInc = isNightSession(timestamp) ? 1 : 0;
+
+  if (existingDaily) {
+    await db.dailyStats.update(dateKey, {
+      learned: existingDaily.learned + 1,
+      newWordsDone: existingDaily.newWordsDone + 1,
+      nightSessions: existingDaily.nightSessions + nightInc,
+      updatedAt: now(),
+    });
+    return;
+  }
+
+  await db.dailyStats.put({
+    dateKey,
+    learned: 1,
+    reviewed: 0,
+    newWordsDone: 1,
+    reviewDone: 0,
+    perfectDay: 0,
+    fastAnswers: 0,
+    nightSessions: nightInc,
+    updatedAt: now(),
+    createdAt: now(),
+  });
+}
+
 function inferWrongReasonFromMode(mode: ReviewLog['mode']): ReviewWrongReason {
   return mode === 'zh2en' ? 'spelling' : 'meaning';
 }
@@ -197,6 +237,10 @@ async function syncWordStatusFromReview(review: Omit<ReviewLog, 'id'>): Promise<
     consecutiveWrongCount: isFailed ? (existing?.consecutiveWrongCount ?? 0) + 1 : 0,
     lastReviewedAt: timestamp,
   });
+
+  if (shouldCountAsNewLearning(existing, isFailed ? 'wrong' : 'known')) {
+    await incrementDailyNewLearning(timestamp);
+  }
 }
 
 async function updateBookWordCount(bookId: string): Promise<void> {
@@ -476,7 +520,7 @@ export async function addWordToBook(
   let finalWordId: number;
   let status: 'added' | 'overwritten' = 'added';
 
-  await db.transaction('rw', db.words, db.books, db.sm2Cards, db.dailyStats, async () => {
+  await db.transaction('rw', db.words, db.books, db.sm2Cards, async () => {
     if (existing?.id) {
       await db.words.put({
         ...payload,
@@ -498,30 +542,6 @@ export async function addWordToBook(
     });
 
     await updateBookWordCount(bookId);
-
-    const dateKey = getDateKey();
-    const existingDaily = await db.dailyStats.get(dateKey);
-    const newWordsAdded = status === 'added' ? 1 : 0;
-    if (existingDaily) {
-      await db.dailyStats.update(dateKey, {
-        learned: existingDaily.learned + newWordsAdded,
-        newWordsDone: existingDaily.newWordsDone + newWordsAdded,
-        updatedAt: now(),
-      });
-    } else {
-      await db.dailyStats.put({
-        dateKey,
-        learned: newWordsAdded,
-        reviewed: 0,
-        newWordsDone: newWordsAdded,
-        reviewDone: 0,
-        perfectDay: 0,
-        fastAnswers: 0,
-        nightSessions: isNightSession() ? 1 : 0,
-        updatedAt: now(),
-        createdAt: now(),
-      });
-    }
   });
 
   return { status, wordId: finalWordId! };
@@ -553,7 +573,7 @@ export async function saveBookWithWords(
   const normalizedWords = words.map((item) => normalizeWord(item.word));
   const uniqueNormalizedWords = [...new Set(normalizedWords)];
 
-  await db.transaction('rw', db.books, db.words, db.sm2Cards, db.dailyStats, async () => {
+  await db.transaction('rw', db.books, db.words, db.sm2Cards, async () => {
     await db.books.add(book);
 
     // Optimized: Only check duplicates within the SAME book (not across all books)
@@ -626,29 +646,6 @@ export async function saveBookWithWords(
       await updateBookWordCount(targetBookId);
     }
 
-    const dateKey = getDateKey();
-    const existingDaily = await db.dailyStats.get(dateKey);
-    const newWordsAdded = savedCount - overwrittenCount;
-    if (existingDaily) {
-      await db.dailyStats.update(dateKey, {
-        learned: existingDaily.learned + newWordsAdded,
-        newWordsDone: existingDaily.newWordsDone + newWordsAdded,
-        updatedAt: now(),
-      });
-    } else {
-      await db.dailyStats.put({
-        dateKey,
-        learned: newWordsAdded,
-        reviewed: 0,
-        newWordsDone: newWordsAdded,
-        reviewDone: 0,
-        perfectDay: 0,
-        fastAnswers: 0,
-        nightSessions: isNightSession() ? 1 : 0,
-        updatedAt: now(),
-        createdAt: now(),
-      });
-    }
   });
 
   return { bookId, savedCount, skippedCount, overwrittenCount };
@@ -660,11 +657,25 @@ export async function deleteWord(wordId: number): Promise<void> {
     return;
   }
 
-  await db.transaction('rw', db.words, db.books, db.sm2Cards, async () => {
-    await db.words.delete(wordId);
-    await db.sm2Cards.delete(wordId);
-    await updateBookWordCount(row.bookId);
-  });
+  await db.transaction(
+    'rw',
+    [
+      db.words,
+      db.books,
+      db.sm2Cards,
+      db.reviewLogs,
+      db.wordStatuses,
+      db.chatMessages,
+    ],
+    async () => {
+      await db.words.delete(wordId);
+      await db.sm2Cards.delete(wordId);
+      await db.reviewLogs.where('wordId').equals(wordId).delete();
+      await db.wordStatuses.filter((status) => status.wordId === wordId).delete();
+      await db.chatMessages.where('wordId').equals(wordId).delete();
+      await updateBookWordCount(row.bookId);
+    },
+  );
 }
 
 export async function updateWord(wordId: number, patch: Partial<WordCard>): Promise<void> {
@@ -841,7 +852,7 @@ export async function logReview(
     sourceMode: review.sourceMode ?? 'test',
   };
 
-  await db.transaction('rw', db.reviewLogs, db.wordStatuses, async () => {
+  await db.transaction('rw', db.reviewLogs, db.wordStatuses, db.dailyStats, async () => {
     await db.reviewLogs.add(payload);
     if (options.syncStatus !== false) {
       await syncWordStatusFromReview(payload);
@@ -1053,26 +1064,49 @@ export async function getSM2CardsByBook(bookId: string): Promise<SM2CardRecord[]
   return db.sm2Cards.where('bookId').equals(bookId).toArray();
 }
 
+function createEmptyDailyStatsRecord(dateKey: string): DailyStatsRecord {
+  return {
+    dateKey,
+    learned: 0,
+    reviewed: 0,
+    newWordsDone: 0,
+    reviewDone: 0,
+    perfectDay: 0,
+    fastAnswers: 0,
+    nightSessions: 0,
+    updatedAt: 0,
+    createdAt: 0,
+  };
+}
+
 export async function getCalendarStats(days = 84): Promise<Array<{ dateKey: string; count: number }>> {
-  const start = getStartOfDay(Date.now() - (days - 1) * 86400000);
-  const all = await db.dailyStats.toArray();
-  return all
-    .filter((item) => {
-      const ts = new Date(`${item.dateKey}T00:00:00`).getTime();
-      return ts >= start;
-    })
-    .map((item) => ({ dateKey: item.dateKey, count: item.learned + item.reviewed }));
+  const rows = await db.dailyStats.toArray();
+  const statsMap = new Map(rows.map((item) => [item.dateKey, item]));
+  const result: Array<{ dateKey: string; count: number }> = [];
+
+  for (let i = days - 1; i >= 0; i--) {
+    const dateKey = getDateKey(Date.now() - i * 86400000);
+    const item = statsMap.get(dateKey);
+    result.push({
+      dateKey,
+      count: (item?.learned ?? 0) + (item?.reviewed ?? 0),
+    });
+  }
+
+  return result;
 }
 
 export async function getRecentDailyStats(days = 7): Promise<DailyStatsRecord[]> {
-  const start = getStartOfDay(Date.now() - (days - 1) * 86400000);
-  const all = await db.dailyStats.toArray();
-  return all
-    .filter((item) => {
-      const ts = new Date(`${item.dateKey}T00:00:00`).getTime();
-      return ts >= start;
-    })
-    .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+  const rows = await db.dailyStats.toArray();
+  const statsMap = new Map(rows.map((item) => [item.dateKey, item]));
+  const result: DailyStatsRecord[] = [];
+
+  for (let i = days - 1; i >= 0; i--) {
+    const dateKey = getDateKey(Date.now() - i * 86400000);
+    result.push(statsMap.get(dateKey) ?? createEmptyDailyStatsRecord(dateKey));
+  }
+
+  return result;
 }
 
 export async function getStreakDays(): Promise<number> {
@@ -1144,25 +1178,62 @@ export async function moveWordToBook(wordId: number, targetBookId: string): Prom
   }
 
   const sourceBookId = word.bookId;
+  if (sourceBookId === targetBookId) {
+    return;
+  }
 
-  await db.transaction('rw', db.words, db.books, db.sm2Cards, async () => {
-    // 更新单词的分组
-    await db.words.update(wordId, {
-      bookId: targetBookId,
-      updatedAt: now(),
-    });
+  await db.transaction(
+    'rw',
+    [
+      db.words,
+      db.books,
+      db.sm2Cards,
+      db.wordStatuses,
+      db.reviewLogs,
+      db.chatMessages,
+    ],
+    async () => {
+      const existingStatus = await db.wordStatuses.get([wordId, sourceBookId]);
 
-    await db.sm2Cards.update(wordId, {
-      bookId: targetBookId,
-      updatedAt: now(),
-    });
+      // 更新单词的分组
+      await db.words.update(wordId, {
+        bookId: targetBookId,
+        updatedAt: now(),
+      });
 
-    // 更新源分组的单词数
-    await updateBookWordCount(sourceBookId);
+      await db.sm2Cards.update(wordId, {
+        bookId: targetBookId,
+        updatedAt: now(),
+      });
 
-    // 更新目标分组的单词数
-    await updateBookWordCount(targetBookId);
-  });
+      if (existingStatus) {
+        await db.wordStatuses.delete([wordId, sourceBookId]);
+        await db.wordStatuses.put({
+          ...existingStatus,
+          bookId: targetBookId,
+        });
+      }
+
+      await db.reviewLogs
+        .where('wordId')
+        .equals(wordId)
+        .modify((log) => {
+          log.bookId = targetBookId;
+        });
+      await db.chatMessages
+        .where('wordId')
+        .equals(wordId)
+        .modify((message) => {
+          message.bookId = targetBookId;
+        });
+
+      // 更新源分组的单词数
+      await updateBookWordCount(sourceBookId);
+
+      // 更新目标分组的单词数
+      await updateBookWordCount(targetBookId);
+    },
+  );
 }
 
 // 删除分组及其所有单词
@@ -1172,23 +1243,39 @@ export async function deleteBook(bookId: string): Promise<void> {
     throw new Error('分组不存在');
   }
 
-  await db.transaction('rw', db.books, db.words, db.reviewLogs, db.sm2Cards, async () => {
-    // 获取该分组下的所有单词ID
-    const wordsInBook = await db.words.where('bookId').equals(bookId).toArray();
-    const wordIds = wordsInBook.map(w => w.id).filter((id): id is number => id !== undefined);
+  await db.transaction(
+    'rw',
+    [
+      db.books,
+      db.words,
+      db.reviewLogs,
+      db.sm2Cards,
+      db.wordStatuses,
+      db.learnSessions,
+      db.chatMessages,
+    ],
+    async () => {
+      // 获取该分组下的所有单词ID
+      const wordsInBook = await db.words.where('bookId').equals(bookId).toArray();
+      const wordIds = wordsInBook.map(w => w.id).filter((id): id is number => id !== undefined);
 
-    // 删除相关的复习记录
-    for (const wordId of wordIds) {
-      await db.reviewLogs.where('wordId').equals(wordId).delete();
-    }
+      // 删除相关的复习记录
+      await db.reviewLogs.where('bookId').equals(bookId).delete();
+      await db.wordStatuses.where('bookId').equals(bookId).delete();
+      await db.learnSessions.where('bookId').equals(bookId).delete();
+      await db.chatMessages.where('bookId').equals(bookId).delete();
+      for (const wordId of wordIds) {
+        await db.chatMessages.where('wordId').equals(wordId).delete();
+      }
 
-    // 删除该分组下的所有单词
-    await db.words.where('bookId').equals(bookId).delete();
-    await db.sm2Cards.where('bookId').equals(bookId).delete();
+      // 删除该分组下的所有单词
+      await db.words.where('bookId').equals(bookId).delete();
+      await db.sm2Cards.where('bookId').equals(bookId).delete();
 
-    // 删除分组
-    await db.books.delete(bookId);
-  });
+      // 删除分组
+      await db.books.delete(bookId);
+    },
+  );
 }
 
 // 重命名分组
@@ -1309,7 +1396,7 @@ export async function getTodayTaskSummary(bookId: string): Promise<TodayTaskSumm
 
 /** 获取最近 N 天的每日统计（折线图 + 词汇增长曲线用） */
 export async function getDailyStatsRange(days = 30): Promise<DailyStatsRecord[]> {
-  const since = Date.now() - days * 86400000;
+  const since = getStartOfDay(Date.now() - (days - 1) * 86400000);
   const rows = await db.dailyStats
     .where('dateKey')
     .aboveOrEqual(getDateKey(since))
@@ -1321,20 +1408,7 @@ export async function getDailyStatsRange(days = 30): Promise<DailyStatsRecord[]>
     const d = new Date(Date.now() - i * 86400000);
     const key = getDateKey(d.getTime());
     const found = rows.find((r) => r.dateKey === key);
-    result.push(
-      found ?? {
-        dateKey: key,
-        learned: 0,
-        reviewed: 0,
-        newWordsDone: 0,
-        reviewDone: 0,
-        perfectDay: 0,
-        fastAnswers: 0,
-        nightSessions: 0,
-        updatedAt: 0,
-        createdAt: 0,
-      },
-    );
+    result.push(found ?? createEmptyDailyStatsRecord(key));
   }
   return result;
 }
@@ -1368,9 +1442,15 @@ export async function getMasteryDistribution(): Promise<{
 }
 
 /** 词汇量累计（增长曲线用） */
-export async function getVocabGrowthData(days = 30): Promise<Array<{ date: string; total: number; added: number }>> {
-  const since = Date.now() - days * 86400000;
-  const words = await db.words.where('createdAt').above(since).toArray();
+export async function getVocabGrowthData(
+  days = 30,
+  bookId?: string | null,
+): Promise<Array<{ date: string; total: number; added: number }>> {
+  const since = getStartOfDay(Date.now() - (days - 1) * 86400000);
+  const recentWords = await db.words.where('createdAt').aboveOrEqual(since).toArray();
+  const baseWords = await db.words.where('createdAt').below(since).toArray();
+  const words = bookId ? recentWords.filter((word) => word.bookId === bookId) : recentWords;
+  const historicalWords = bookId ? baseWords.filter((word) => word.bookId === bookId) : baseWords;
 
   // 按日期聚合
   const dailyAdded = new Map<string, number>();
@@ -1380,7 +1460,7 @@ export async function getVocabGrowthData(days = 30): Promise<Array<{ date: strin
   }
 
   // 获取 since 之前的总词汇量作为基线
-  const baseCount = await db.words.where('createdAt').below(since).count();
+  const baseCount = historicalWords.length;
 
   const result: Array<{ date: string; total: number; added: number }> = [];
   let cumulative = baseCount;
@@ -1468,23 +1548,26 @@ export async function saveWordStatus(
     timestamp?: number;
   } = {},
 ): Promise<void> {
-  const existing = await db.wordStatuses.get([wordId, bookId]);
-  const timestamp = options.timestamp ?? now();
-  const isWrongState = state === 'unknown' || state === 'wrong';
+  await db.transaction('rw', db.wordStatuses, db.dailyStats, async () => {
+    const existing = await db.wordStatuses.get([wordId, bookId]);
+    const timestamp = options.timestamp ?? now();
+    const isWrongState = state === 'unknown' || state === 'wrong';
 
-  await db.wordStatuses.put({
-    wordId,
-    bookId,
-    state,
-    learnedAt:
-      state === 'known' || state === 'unknown' || state === 'wrong'
-        ? existing?.learnedAt ?? timestamp
-        : existing?.learnedAt,
-    testedAt: options.testPassed !== undefined ? timestamp : existing?.testedAt,
-    testPassed: options.testPassed ?? existing?.testPassed,
-    wrongReason: isWrongState ? options.wrongReason ?? existing?.wrongReason : existing?.wrongReason,
-    consecutiveWrongCount: isWrongState ? (existing?.consecutiveWrongCount ?? 0) + 1 : 0,
-    lastReviewedAt: timestamp,
+    await db.wordStatuses.put({
+      wordId,
+      bookId,
+      state,
+      learnedAt: isLearnedWordState(state) ? existing?.learnedAt ?? timestamp : existing?.learnedAt,
+      testedAt: options.testPassed !== undefined ? timestamp : existing?.testedAt,
+      testPassed: options.testPassed ?? existing?.testPassed,
+      wrongReason: isWrongState ? options.wrongReason ?? existing?.wrongReason : existing?.wrongReason,
+      consecutiveWrongCount: isWrongState ? (existing?.consecutiveWrongCount ?? 0) + 1 : 0,
+      lastReviewedAt: timestamp,
+    });
+
+    if (shouldCountAsNewLearning(existing, state)) {
+      await incrementDailyNewLearning(timestamp);
+    }
   });
 }
 

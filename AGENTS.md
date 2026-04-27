@@ -27,7 +27,7 @@ english/
 **Data Flow:**
 - All persistent data → IndexedDB (Dexie.js) - `db.ts`
 - Settings only → localStorage - `settings.ts`
-- API calls → Local Express proxy (port 8787) → External OCR/LLM APIs
+- API calls → Local Express proxy (port 8770) → External OCR/LLM APIs
 
 ## Commands
 
@@ -46,8 +46,8 @@ npm run lint
 ```
 
 **Port Mapping:**
-- Vite dev: 4173 (with `/api` proxy to 8787)
-- Express API: 8787
+- Vite dev: 4173 (with `/api` proxy to 8770)
+- Express API: 8770
 
 ## Key Implementation Details
 
@@ -141,7 +141,7 @@ Production build goes to `dist/`:
 ## Environment Variables (Server)
 
 ```bash
-PORT=8787              # API server port
+PORT=8770              # API server port
 AUTH_TOKEN=xxx         # Optional token auth for API
 ```
 

@@ -17,11 +17,11 @@ export function TopNav({ title, streakDays = 0, onOpenStats, onOpenSettings }: T
           </div>
         ) : null}
         {onOpenStats ? (
-          <button type="button" className="top-nav-btn" onClick={onOpenStats} aria-label="打开统计" title="打开统计">
+          <button type="button" className="top-nav-btn ripple-btn" onClick={onOpenStats} aria-label="打开统计" title="打开统计">
             📊
           </button>
         ) : null}
-        <button type="button" className="top-nav-btn" onClick={onOpenSettings} aria-label="打开设置" title="打开设置">
+        <button type="button" className="top-nav-btn ripple-btn" onClick={onOpenSettings} aria-label="打开设置" title="打开设置">
           ⚙️
         </button>
       </div>

@@ -231,15 +231,25 @@ export interface AIAssistantWordContext {
 }
 
 export type ThemePreset = 'classic' | 'mist' | 'pulse';
+export type VocabExtractMode = 'large_only' | 'large_structure_small_enrich' | 'small_only';
 
 export interface AppSettings {
   theme: 'light' | 'dark' | 'auto';
   language: 'zh-CN' | 'en-US';
   defaultLevel: string;
+  vocabExtractMode: VocabExtractMode;
 
   aiAssistant: AIAssistantSettings;
 
   llm: {
+    provider: 'deepseek' | 'openai' | 'zhipu' | 'custom';
+    apiKey: string;
+    baseUrl: string;
+    model: string;
+    temperature?: number; // undefined = auto-detect based on model name
+  };
+
+  smallLlm: {
     provider: 'deepseek' | 'openai' | 'zhipu' | 'custom';
     apiKey: string;
     baseUrl: string;
@@ -272,9 +282,11 @@ export interface AppSettings {
     preset: ThemePreset;
     wallpaperType: 'default' | 'custom';
     wallpaperBase64?: string;
+    motionEffects: boolean;
     brightness: number;
     blur: number;
     overlayOpacity: number;
+    fontFamily?: string;
   };
 
   bgMusic: {

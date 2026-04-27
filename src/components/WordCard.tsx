@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { forwardRef, useEffect, useMemo, useState, type CSSProperties, type PointerEvent } from 'react';
 import type { WordCard as WordCardType } from '../types';
 import { formatReviewEta } from '../sm2';
 import { getLevelTagClass, splitPosMeaning } from '../utils';
@@ -135,6 +135,16 @@ export const WordCard = forwardRef<HTMLElement, WordCardProps>(function WordCard
     onRequestAddRelated?.(target);
   };
 
+  const handlePointerMove = (event: PointerEvent<HTMLElement>) => {
+    const target = event.currentTarget;
+    const rect = target.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 100;
+    const y = ((event.clientY - rect.top) / rect.height) * 100;
+
+    target.style.setProperty('--card-spotlight-x', `${x.toFixed(1)}%`);
+    target.style.setProperty('--card-spotlight-y', `${y.toFixed(1)}%`);
+  };
+
   return (
     <article
       ref={ref}
@@ -143,6 +153,7 @@ export const WordCard = forwardRef<HTMLElement, WordCardProps>(function WordCard
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
+      onPointerMove={handlePointerMove}
     >
       <div className="word-row">
         <h2 className="text-word word-title">{word.word}</h2>
