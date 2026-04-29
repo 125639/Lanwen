@@ -246,6 +246,7 @@ export async function streamExtractWordsPipeline(
     settings: AppSettings;
     mode: VocabExtractMode;
     batchSize?: number;
+    signal?: AbortSignal;
   },
   onWord: (word: ExtractedWordDraft) => void,
   onEvent?: (event: ExtractPipelineEvent) => void,
@@ -256,13 +257,14 @@ export async function streamExtractWordsPipeline(
       headers: {
         'Content-Type': 'application/json',
       },
+      signal: payload.signal,
       body: JSON.stringify({
         ocrText: payload.ocrText,
         levelTag: payload.levelTag,
         mode: payload.mode,
         llm: payload.settings.llm,
         smallLlm: payload.settings.smallLlm,
-        batchSize: payload.batchSize ?? 1,
+        batchSize: payload.batchSize ?? 5,
       }),
     }),
     300000,
@@ -994,6 +996,50 @@ export async function testLLMConnection(settings: AppSettings): Promise<TestConn
           { key: 'backend', label: '本地后端', status: 'error', message: '浏览器无法访问后端代理' },
         ],
       };
+    }
+    return { success: false, message };
+  }
+}
+
+export async function testSmallLLMConnection(settings: AppSettings): Promise<TestConnectionResult> {
+  const startTime = Date.now();
+  try {
+    const response = await withTimeout(
+      fetch(apiUrl('/api/llm/test'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          llm: settings.smallLlm,
+        }),
+      }),
+      30000,
+    );
+
+    const latency = Date.now() - startTime;
+
+    if (!response.ok) {
+      const text = await response.text();
+      const payload = parseConnectionTestPayload(text, '小模型连接测试失败');
+      return { success: false, ...payload };
+    }
+
+    const result = await response.json();
+    return {
+      success: true,
+      message: result.message || '小模型连接正常',
+      latency,
+      advice: typeof result.advice === 'string' ? result.advice : undefined,
+      diagnostics: normalizeConnectionDiagnostics(result.diagnostics),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '网络请求失败';
+    if (message.includes('timeout') || message.includes('超时')) {
+      return { success: false, message: '连接超时，请检查网络或 API 配置' };
+    }
+    if (message.includes('fetch') || message.includes('network')) {
+      return { success: false, message: '网络错误，请检查后端代理是否运行' };
     }
     return { success: false, message };
   }

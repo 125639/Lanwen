@@ -10,6 +10,7 @@ interface OnboardingModalProps {
 export function OnboardingModal({ settings, onComplete }: OnboardingModalProps) {
   const [step, setStep] = useState(1);
   const [llmApiKey, setLlmApiKey] = useState(settings.llm.apiKey);
+  const [smallLlmApiKey, setSmallLlmApiKey] = useState(settings.smallLlm.apiKey || settings.llm.apiKey);
   const [ocrApiKey, setOcrApiKey] = useState(settings.ocr.apiKey ?? '');
 
   return createPortal(
@@ -30,17 +31,23 @@ export function OnboardingModal({ settings, onComplete }: OnboardingModalProps) 
         {step === 2 ? (
           <section className="onboarding-step">
             <div className="onboarding-emoji">🤖</div>
-            <h2 className="onboarding-title">填写 LLM API Key</h2>
-            <p className="onboarding-desc">用于解析和生成卡片内容。推荐使用 DeepSeek API。</p>
+            <h2 className="onboarding-title">填写大模型 / 小模型 Key</h2>
+            <p className="onboarding-desc">默认模式会同时用到大模型和小模型，推荐使用 SiliconFlow API。</p>
             <div className="onboarding-input-group">
               <input
                 value={llmApiKey}
                 onChange={(event) => setLlmApiKey(event.target.value)}
-                placeholder="sk-..."
+                placeholder="大模型 Key（DeepSeek-V4-Flash）"
+                className="onboarding-input"
+              />
+              <input
+                value={smallLlmApiKey}
+                onChange={(event) => setSmallLlmApiKey(event.target.value)}
+                placeholder="小模型 Key（Qwen3.5-9B，可与上面相同）"
                 className="onboarding-input"
               />
               <div className="onboarding-hint">
-                <a href="https://platform.deepseek.com" target="_blank" rel="noreferrer">
+                <a href="https://cloud.siliconflow.cn" target="_blank" rel="noreferrer">
                   获取 API Key
                 </a>
               </div>
@@ -94,6 +101,10 @@ export function OnboardingModal({ settings, onComplete }: OnboardingModalProps) 
                 onClick={() =>
                   onComplete({
                     llm: { ...settings.llm, apiKey: llmApiKey.trim() },
+                    smallLlm: {
+                      ...settings.smallLlm,
+                      apiKey: (smallLlmApiKey || llmApiKey).trim(),
+                    },
                     ocr: { ...settings.ocr, apiKey: ocrApiKey.trim() },
                   })
                 }

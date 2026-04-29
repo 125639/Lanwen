@@ -11,6 +11,11 @@ node_modules
 dist
 dist-ssr
 *.local
+*.tsbuildinfo
+.claude/
+test_flow.sh
+DEPLOYMENT_REPORT.md
+*.zip
 
 # Editor directories and files
 .vscode/*

@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import { testLLMConnection, testOCRConnection, type TestConnectionDiagnostic } from '../api';
+import { testLLMConnection, testOCRConnection, testSmallLLMConnection, type TestConnectionDiagnostic } from '../api';
 import { matchesMediaQuery, subscribeToMediaQuery } from '../browser';
 import { DEFAULT_SETTINGS, saveSettings } from '../settings';
 import type {
@@ -513,6 +513,11 @@ export function SettingsPanel({
   const [llmTestAdvice, setLlmTestAdvice] = useState('');
   const [llmDiagnostics, setLlmDiagnostics] = useState<TestConnectionDiagnostic[]>([]);
   const [showLlmDiagnostics, setShowLlmDiagnostics] = useState(false);
+  const [smallLlmTestStatus, setSmallLlmTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [smallLlmTestMessage, setSmallLlmTestMessage] = useState('');
+  const [smallLlmTestAdvice, setSmallLlmTestAdvice] = useState('');
+  const [smallLlmDiagnostics, setSmallLlmDiagnostics] = useState<TestConnectionDiagnostic[]>([]);
+  const [showSmallLlmDiagnostics, setShowSmallLlmDiagnostics] = useState(false);
   const [ocrTestStatus, setOcrTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [ocrTestMessage, setOcrTestMessage] = useState('');
 
@@ -534,6 +539,26 @@ export function SettingsPanel({
     setLlmTestMessage(result.success && result.latency ? `${result.message} (${result.latency}ms)` : result.message);
     setLlmTestAdvice(result.advice ?? '');
     setLlmDiagnostics(result.diagnostics ?? []);
+  };
+
+  const handleTestSmallLLM = async () => {
+    if (!settings.smallLlm.apiKey) {
+      setSmallLlmTestStatus('error');
+      setSmallLlmTestMessage('请先填写小模型 API Key');
+      setSmallLlmTestAdvice('');
+      setSmallLlmDiagnostics([]);
+      return;
+    }
+    setSmallLlmTestStatus('testing');
+    setSmallLlmTestMessage('测试中...');
+    setSmallLlmTestAdvice('');
+    setSmallLlmDiagnostics([]);
+    setShowSmallLlmDiagnostics(false);
+    const result = await testSmallLLMConnection(settings);
+    setSmallLlmTestStatus(result.success ? 'success' : 'error');
+    setSmallLlmTestMessage(result.success && result.latency ? `${result.message} (${result.latency}ms)` : result.message);
+    setSmallLlmTestAdvice(result.advice ?? '');
+    setSmallLlmDiagnostics(result.diagnostics ?? []);
   };
 
   const handleTestOCR = async () => {
@@ -1478,6 +1503,53 @@ export function SettingsPanel({
                     {llmTestAdvice ? <p className="connection-advice">{llmTestAdvice}</p> : null}
                     {llmDiagnostics.map((item) => (
                       <div className={`connection-diagnostic ${item.status}`} key={`${item.key}-${item.label}`}>
+                        <span className="connection-diagnostic-dot" />
+                        <div className="connection-diagnostic-body">
+                          <strong>
+                            {item.label}
+                            <span>{getDiagnosticStatusText(item.status)}</span>
+                          </strong>
+                          <p>{item.message}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </SettingsItem>
+
+            <SettingsItem>
+              <div>
+                <strong>小模型连接</strong>
+                <div className="setting-hint">验证小模型 API 是否可正常访问</div>
+              </div>
+              <div className="test-connection-wrap">
+                <button
+                  type="button"
+                  className={`tap test-connection-btn ${smallLlmTestStatus}`}
+                  onClick={handleTestSmallLLM}
+                  disabled={smallLlmTestStatus === 'testing'}
+                >
+                  {smallLlmTestStatus === 'testing' ? '测试中...' : '测试连接'}
+                </button>
+                {smallLlmTestMessage ? (
+                  <div className={`test-connection-message ${smallLlmTestStatus}`}>{smallLlmTestMessage}</div>
+                ) : null}
+                {smallLlmDiagnostics.length > 0 ? (
+                  <button
+                    type="button"
+                    className="tap connection-detail-toggle"
+                    onClick={() => setShowSmallLlmDiagnostics((prev) => !prev)}
+                    aria-expanded={showSmallLlmDiagnostics}
+                  >
+                    {showSmallLlmDiagnostics ? '收起详情' : '查看详情'}
+                  </button>
+                ) : null}
+                {showSmallLlmDiagnostics && smallLlmDiagnostics.length > 0 ? (
+                  <div className="connection-diagnostics">
+                    {smallLlmTestAdvice ? <p className="connection-advice">{smallLlmTestAdvice}</p> : null}
+                    {smallLlmDiagnostics.map((item) => (
+                      <div className={`connection-diagnostic ${item.status}`} key={`small-${item.key}-${item.label}`}>
                         <span className="connection-diagnostic-dot" />
                         <div className="connection-diagnostic-body">
                           <strong>

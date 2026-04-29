@@ -81,7 +81,7 @@ const EXTRACT_MODE_OPTIONS: Array<{
   {
     value: 'small_only',
     label: '小模型全流程',
-    description: '低成本模式，小模型先整理再逐词补全；若当前小模型超时，会自动尝试同系列更稳型号。',
+    description: '低成本模式，小模型先整理再逐词补全；对 OCR 噪声过滤和教材原貌还原可能较弱。',
   },
 ];
 
@@ -559,7 +559,7 @@ export function LibraryPage({
           levelTag: settings.defaultLevel,
           settings,
           mode: selectedMode,
-          batchSize: 1,
+          batchSize: 5,
         },
         appendDraft,
         applyPipelineEvent,
@@ -1341,6 +1341,33 @@ export function LibraryPage({
                     ))}
                   </div>
                   <p className="upload-mode-description">{selectedExtractModeOption.description}</p>
+                  {/* 小模型未配置警告 */}
+                  {(uploadExtractMode === 'large_structure_small_enrich' || uploadExtractMode === 'small_only') &&
+                    !settings.smallLlm?.apiKey?.trim() && (
+                    <p style={{
+                      marginTop: '8px',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      background: 'var(--color-warning-bg, #fef3c7)',
+                      color: 'var(--color-warning-text, #92400e)',
+                      fontSize: '0.78rem',
+                      lineHeight: 1.5,
+                    }}>
+                      ⚠ 当前模式需要配置小模型 API Key，请先前往设置 → 小模型配置填写后再提取
+                    </p>
+                  )}
+                  {uploadExtractMode === 'large_only' && !settings.llm?.apiKey?.trim() && (
+                    <p style={{
+                      marginTop: '8px',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      background: 'var(--color-warning-bg, #fef3c7)',
+                      color: 'var(--color-warning-text, #92400e)',
+                      fontSize: '0.78rem',
+                    }}>
+                      ⚠ 当前模式需要配置大模型 API Key，请先前往设置填写
+                    </p>
+                  )}
                 </div>
                 <div className="row-buttons">
                   <button type="button" className="tap ghost-btn" onClick={() => void startOCR()}>
@@ -1357,33 +1384,70 @@ export function LibraryPage({
               <section className="upload-step">
                 <div className="spinner" />
                 <h4>AI 正在处理词汇...</h4>
+
+                {/* 当前阶段状态 */}
                 <p className="processing-status">{extractProgress.status}</p>
+
+                {/* 模式标签 */}
+                <p className="subtext" style={{ marginBottom: '8px', opacity: 0.6, fontSize: '0.75rem' }}>
+                  {uploadExtractMode === 'large_only' && '大模型全包揽'}
+                  {uploadExtractMode === 'large_structure_small_enrich' && '大模型整理 + 小模型补全'}
+                  {uploadExtractMode === 'small_only' && '小模型全流程'}
+                </p>
+
+                {/* 数据统计格 */}
                 <div className="extract-progress-grid">
+                  {extractProgress.structuredCount > 0 && (
+                    <div>
+                      <span>已整理</span>
+                      <strong>{extractProgress.structuredCount}</strong>
+                    </div>
+                  )}
                   <div>
-                    <span>已整理</span>
-                    <strong>{extractProgress.structuredCount}</strong>
-                  </div>
-                  <div>
-                    <span>完成</span>
+                    <span>已完成</span>
                     <strong>
                       {extractProgress.completed}
-                      {extractProgress.total ? ` / ${extractProgress.total}` : ''}
+                      {extractProgress.total > 0 ? ` / ${extractProgress.total}` : ''}
                     </strong>
                   </div>
-                  <div>
-                    <span>失败</span>
-                    <strong>{extractProgress.failed}</strong>
-                  </div>
+                  {extractProgress.failed > 0 && (
+                    <div>
+                      <span>失败</span>
+                      <strong style={{ color: 'var(--color-warning, #f59e0b)' }}>
+                        {extractProgress.failed}
+                      </strong>
+                    </div>
+                  )}
                 </div>
+
+                {/* 批次进度 */}
                 {extractProgress.totalBatches > 0 ? (
-                  <p className="subtext">
-                    正在补全第 {extractProgress.batchIndex}/{extractProgress.totalBatches} 批
-                  </p>
+                  <div style={{ width: '100%' }}>
+                    <p className="subtext" style={{ marginBottom: '4px' }}>
+                      第 {extractProgress.batchIndex} / {extractProgress.totalBatches} 批
+                    </p>
+                    <div style={{
+                      height: '4px',
+                      borderRadius: '2px',
+                      background: 'var(--color-border, #e5e7eb)',
+                      overflow: 'hidden',
+                    }}>
+                      <div style={{
+                        height: '100%',
+                        borderRadius: '2px',
+                        background: 'var(--color-primary, #6366f1)',
+                        width: `${Math.round((extractProgress.batchIndex / extractProgress.totalBatches) * 100)}%`,
+                        transition: 'width 0.3s ease',
+                      }} />
+                    </div>
+                  </div>
                 ) : (
                   <p className="subtext">已生成 {extractingCount} 张词卡</p>
                 )}
+
+                {/* 最近词卡预览 */}
                 <div className="stream-preview">
-                  {candidateWords.slice(-8).map((item) => (
+                  {candidateWords.slice(-6).map((item) => (
                     <div className="stream-word-card" key={item.id}>
                       <strong>{item.data.word}</strong>
                       <span>{item.data.pos}</span>
@@ -1391,6 +1455,7 @@ export function LibraryPage({
                     </div>
                   ))}
                 </div>
+
                 <button
                   type="button"
                   className="tap text-danger-btn"
