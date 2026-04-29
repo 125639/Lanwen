@@ -15,7 +15,7 @@ import type {
 } from './types';
 import { createSM2Card, getDueCards, sm2Update, type SM2Grade } from './sm2';
 
-class LinguaFlashDB extends Dexie {
+class LanwenDB extends Dexie {
   books!: Table<Book, string>;
   words!: Table<WordCard, number>;
   reviewLogs!: Table<ReviewLog, number>;
@@ -65,7 +65,7 @@ class LinguaFlashDB extends Dexie {
   }
 }
 
-export const db = new LinguaFlashDB();
+export const db = new LanwenDB();
 
 function getDateKey(timestamp = Date.now()): string {
   const d = new Date(timestamp);

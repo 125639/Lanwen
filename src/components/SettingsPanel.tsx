@@ -1870,7 +1870,7 @@ export function SettingsPanel({
                     type="button"
                     className="tap secondary-btn"
                     onClick={() => {
-                      const text = 'Hello, this is LinguaFlash.';
+                      const text = 'Hello, this is Lanwen.';
                       void import('../tts').then(({ speakWord }) => {
                         void speakWord(text, settings, 'us');
                       });
@@ -2210,7 +2210,7 @@ export function SettingsPanel({
 
       {group === 'about' ? (
         <section className="about-section">
-          <h3>LinguaFlash</h3>
+          <h3>Lanwen</h3>
           <p>基于 OCR + 大语言模型的个人英语点读卡片与智能复习系统。</p>
           <ul>
             <li>前端：React + TypeScript</li>

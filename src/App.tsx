@@ -403,7 +403,7 @@ function App() {
     setSettings(updated);
     markOnboardingDone();
     setShowOnboarding(false);
-    notify('success', '欢迎使用 LinguaFlash');
+    notify('success', '欢迎使用 Lanwen');
   };
 
   const handleToggleFavorite = async (word: WordCard) => {

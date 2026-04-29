@@ -18,7 +18,7 @@ export function OnboardingModal({ settings, onComplete }: OnboardingModalProps) 
       {step === 1 ? (
           <section className="onboarding-step">
             <div className="onboarding-emoji">👋</div>
-            <h2 className="onboarding-title">欢迎使用 LinguaFlash</h2>
+            <h2 className="onboarding-title">欢迎使用 Lanwen</h2>
             <p className="onboarding-desc">OCR + AI 点读卡片与智能复习系统。先完成必要配置。</p>
             <div className="onboarding-actions">
               <button type="button" className="tap primary-btn onboarding-btn" onClick={() => setStep(2)}>
@@ -93,7 +93,7 @@ export function OnboardingModal({ settings, onComplete }: OnboardingModalProps) 
           <section className="onboarding-step">
             <div className="onboarding-emoji">🔒</div>
             <h2 className="onboarding-title">隐私说明</h2>
-            <p className="onboarding-desc">所有数据仅存于你的浏览器，API Key 不上传到 LinguaFlash 服务器。</p>
+            <p className="onboarding-desc">所有数据仅存于你的浏览器，API Key 不上传到 Lanwen 服务器。</p>
             <div className="onboarding-actions">
               <button
                 type="button"

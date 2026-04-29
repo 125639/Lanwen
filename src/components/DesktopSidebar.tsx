@@ -13,7 +13,7 @@ export function DesktopSidebar({ activeTab, onChange, collapsed, onToggleCollaps
     <aside className={`desktop-sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="desktop-sidebar-head">
         <div className="desktop-sidebar-brand" aria-hidden={collapsed}>
-          <strong>LinguaFlash</strong>
+          <strong>Lanwen</strong>
           <small>English Trainer</small>
         </div>
         <button

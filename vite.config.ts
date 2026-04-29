@@ -22,8 +22,8 @@ export default defineConfig({
         ],
       },
       manifest: {
-        name: 'LinguaFlash',
-        short_name: 'LinguaFlash',
+        name: 'Lanwen',
+        short_name: 'Lanwen',
         description: '智能英语词卡复习系统',
         theme_color: '#6366F1',
         background_color: '#F8FAFF',

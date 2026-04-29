@@ -1,4 +1,4 @@
-# LinguaFlash - Agent Guide
+# Lanwen - Agent Guide
 
 A mobile-first English flashcard app with OCR + LLM integration, Youdao Dictionary-style word cards, and SM2 spaced repetition.
 

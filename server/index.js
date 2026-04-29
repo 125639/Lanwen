@@ -1836,7 +1836,7 @@ function sanitizePromptValue(value, maxLength = 200) {
 
 function buildChatSystemPrompt(contextWord) {
   const basePrompt = [
-    '你是 LinguaFlash 的英语学习助手。',
+    '你是 Lanwen 的英语学习助手。',
     '你的回答应当准确、简洁、可操作，优先服务英语学习场景。',
     '可使用 Markdown，必要时用简短列表组织答案。',
     '如果用户要求例句，默认给出中英对照。',
@@ -1938,7 +1938,7 @@ function buildSentenceEvaluationPrompt(payload) {
     .join('\n');
 
   return [
-    `你是 LinguaFlash 的 AI 伙伴，名字是「${payload.aiRole.name}」。`,
+    `你是 Lanwen 的 AI 伙伴，名字是「${payload.aiRole.name}」。`,
     `你的性格设定：${payload.aiRole.personality}`,
     '你要评估用户翻译表现。注意：不要求和参考句一模一样，语义正确优先。',
     '',
@@ -2120,7 +2120,7 @@ async function fetchBuiltinArticleDetails(source) {
     const response = await safeFetch(source.url, {
       method: 'GET',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; LinguaFlashBot/1.0; +https://linguaflash.local)',
+        'User-Agent': 'Mozilla/5.0 (compatible; LanwenBot/1.0; +https://linguaflash.local)',
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       },
       signal: controller.signal,
@@ -3654,7 +3654,7 @@ if (fs.existsSync(distDir)) {
 }
 
 app.listen(PORT, HOST, () => {
-  console.log(`LinguaFlash proxy listening on http://${HOST}:${PORT}`);
+  console.log(`Lanwen proxy listening on http://${HOST}:${PORT}`);
   if ((HOST === '0.0.0.0' || HOST === '::') && !AUTH_TOKEN) {
     console.warn('[Security] Remote binding is enabled without AUTH_TOKEN. Set AUTH_TOKEN before exposing this service.');
   }

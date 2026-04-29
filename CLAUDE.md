@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LinguaFlash is a mobile-first English flashcard PWA (React + TypeScript + Vite) with OCR + LLM integration for extracting words from images, Youdao Dictionary-style word cards, and SM-2 spaced repetition. The UI is in Chinese (zh-CN).
+Lanwen is a mobile-first English flashcard PWA (React + TypeScript + Vite) with OCR + LLM integration for extracting words from images, Youdao Dictionary-style word cards, and SM-2 spaced repetition. The UI is in Chinese (zh-CN).
 
 ## Commands
 
