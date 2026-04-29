@@ -50,8 +50,26 @@ npm run serve
 
 ```bash
 docker build -t lanwen .
-docker run -p 8770:8770 lanwen
+docker run -d --name lanwen -p 8770:8770 lanwen
 ```
+
+#### Pull from Docker Hub
+
+```bash
+docker pull safg/lanwen:latest
+docker run -d --name lanwen -p 8770:8770 safg/lanwen:latest
+```
+
+#### Deploy
+
+```bash
+docker run -d --name lanwen -p <HOST_PORT>:8770 -e AUTH_TOKEN=xxx safg/lanwen:latest
+```
+
+| Env         | Default | Description       |
+| ----------- | ------- | ----------------- |
+| `PORT`      | `8770`  | API server port   |
+| `AUTH_TOKEN`| (none)  | Optional API auth |
 
 ### PM2
 
