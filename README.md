@@ -53,6 +53,8 @@ docker build -t lanwen .
 docker run -d --name lanwen -p 8770:8770 lanwen
 ```
 
+The image runs as a non-root `app` user and includes a healthcheck at `/api/health`.
+
 #### Pull from Docker Hub
 
 ```bash

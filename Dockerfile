@@ -5,22 +5,29 @@ WORKDIR /app
 
 FROM base AS deps
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN rm -f .npmrc && npm ci
 
 FROM deps AS build
 COPY . .
-RUN npm run build
+RUN rm -f .npmrc && npm run build
 
 FROM base AS runtime
+RUN addgroup -S app && adduser -S app -G app
+
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=8770
 
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+COPY --chown=app:app package.json package-lock.json ./
+RUN rm -f .npmrc && npm ci --omit=dev
 
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/server ./server
+COPY --chown=app:app --from=build /app/dist ./dist
+COPY --chown=app:app --from=build /app/server ./server
+
+USER app
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -qO- http://localhost:8770/api/health || exit 1
 
 EXPOSE 8770
 CMD ["node", "server/index.js"]
